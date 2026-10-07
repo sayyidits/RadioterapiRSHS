@@ -1,12 +1,11 @@
 import Link from "next/link";
 import { StageBadge } from "@/components/badges";
-import { ResetDemoButton } from "@/components/demo-controls";
-import { IS_DEMO } from "@/lib/mode";
 import { getCurrentUser } from "@/lib/auth";
+import { IS_DEMO } from "@/lib/mode";
 import { fractionCounts, listPatients } from "@/lib/data";
 import { daysSince } from "@/lib/format";
 import type { Patient } from "@/lib/types";
-import { ROLES, ROLE_SHORT, STAGES, STAGE_MAP, stagesOwnedBy } from "@/lib/workflow";
+import { ROLES, ROLE_SHORT, STAGES, STAGE_MAP, stagesOwnedBy, type Role } from "@/lib/workflow";
 
 export default async function DashboardPage() {
   const [user, patients] = await Promise.all([getCurrentUser(), listPatients()]);
@@ -33,7 +32,15 @@ export default async function DashboardPage() {
             {user.role === "perawat" && " (akses lihat saja)"}
           </p>
         </div>
-        {IS_DEMO && <ResetDemoButton />}
+        {user.role === "administrasi" && (
+          <Link
+            href="/pasien/baru"
+            className="btn bg-emerald-600 px-5 py-2.5 text-white shadow-sm hover:bg-emerald-700"
+          >
+            <span className="text-lg leading-none" aria-hidden="true">+</span>
+            Tambah pasien
+          </Link>
+        )}
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
@@ -84,40 +91,55 @@ export default async function DashboardPage() {
         </section>
       )}
 
-      <section>
-        <h2 className="mb-3 font-semibold">Alur pasien</h2>
-        <div className="-mx-4 overflow-x-auto px-4 pb-2">
-          <div className="flex min-w-max gap-3">
-            {STAGES.map((s) => {
-              const list = patients.filter((p) => p.current_stage === s.key);
-              const mine = s.owner === user.role;
-              return (
-                <div
-                  key={s.key}
-                  className={`flex w-60 flex-col rounded-xl border ${mine ? "border-teal-300 bg-teal-50/50" : "border-slate-200 bg-slate-100/60"}`}
-                >
-                  <div className="flex items-center justify-between px-3 pb-2 pt-3">
-                    <div>
-                      <p className="text-sm font-semibold">{s.label}</p>
-                      <p className="text-[11px] text-slate-500">{s.owner ? ROLE_SHORT[s.owner] : "—"}</p>
-                    </div>
-                    <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
-                      {list.length}
-                    </span>
-                  </div>
-                  <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
-                    {list.length === 0 && <p className="px-1 py-3 text-center text-xs text-slate-400">Kosong</p>}
-                    {list.map((p) => (
-                      <KanbanCard key={p.id} patient={p} done={fractions[p.id] ?? 0} />
-                    ))}
-                  </div>
-                </div>
-              );
-            })}
-          </div>
-        </div>
-      </section>
+      {/* Papan alur hanya untuk presentasi (mode demo); tidak ditampilkan di versi produksi */}
+      {IS_DEMO && <StageBoard patients={patients} fractions={fractions} role={user.role} />}
     </div>
+  );
+}
+
+function StageBoard({
+  patients,
+  fractions,
+  role,
+}: {
+  patients: Patient[];
+  fractions: Record<string, number>;
+  role: Role;
+}) {
+  return (
+    <section>
+      <h2 className="mb-3 font-semibold">Alur pasien</h2>
+      <div className="-mx-4 overflow-x-auto px-4 pb-2">
+        <div className="flex min-w-max gap-3">
+          {STAGES.map((s) => {
+            const list = patients.filter((p) => p.current_stage === s.key);
+            const mine = s.owner === role;
+            return (
+              <div
+                key={s.key}
+                className={`flex w-60 flex-col rounded-xl border ${mine ? "border-teal-300 bg-teal-50/50" : "border-slate-200 bg-slate-100/60"}`}
+              >
+                <div className="flex items-center justify-between px-3 pb-2 pt-3">
+                  <div>
+                    <p className="text-sm font-semibold">{s.label}</p>
+                    <p className="text-[11px] text-slate-500">{s.owner ? ROLE_SHORT[s.owner] : "—"}</p>
+                  </div>
+                  <span className="rounded-full bg-white px-2 py-0.5 text-xs font-semibold text-slate-700 ring-1 ring-slate-200">
+                    {list.length}
+                  </span>
+                </div>
+                <div className="flex max-h-[60vh] flex-col gap-2 overflow-y-auto px-2 pb-2">
+                  {list.length === 0 && <p className="px-1 py-3 text-center text-xs text-slate-400">Kosong</p>}
+                  {list.map((p) => (
+                    <KanbanCard key={p.id} patient={p} done={fractions[p.id] ?? 0} />
+                  ))}
+                </div>
+              </div>
+            );
+          })}
+        </div>
+      </div>
+    </section>
   );
 }
 

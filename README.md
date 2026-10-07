@@ -40,11 +40,12 @@ npm run dev
 Buka http://localhost:3000 lalu pilih role. Di mode demo:
 - Database Postgres (PGlite) berjalan langsung di laptop dan memakai migration SQL yang sama, jadi aturan ACC per role tetap berlaku.
 - Tidak perlu login. Role dipilih di halaman awal dan bisa diganti kapan saja lewat dropdown **"Lihat sebagai"** di kanan atas tanpa pindah halaman.
-- Data awalnya 10 pasien dummy di berbagai tahap. Tombol **Reset data demo** mengembalikan data ke kondisi awal.
+- Data awalnya 10 pasien dummy di berbagai tahap. Tombol **Reset data demo** ada di halaman pilih role (klik **Keluar**) dan mengembalikan data ke kondisi awal.
+- Papan **Alur pasien** (kolom per tahap) di dashboard hanya muncul di mode demo, untuk presentasi.
 - Data tersimpan di `node_modules/.cache/demo-db`.
 
 Skenario demo singkat:
-1. **Administrasi**: + Pasien Baru → daftarkan pasien, yang langsung masuk Poli.
+1. **Administrasi**: tombol hijau **Tambah pasien** di dashboard → daftarkan pasien, yang langsung masuk Poli.
 2. **Dokter**: buka pasien → isi form Poli → ACC.
 3. **RTT** → CT Simulator, lalu **Dokter** → Delineasi (isi dosis & jumlah fraksi), lalu **Fismed** → Planning.
 4. **Dokter** di ACC Planning: coba **Kembalikan** ke Planning dengan alasan, lalu Fismed kirim ulang dan Dokter ACC.
