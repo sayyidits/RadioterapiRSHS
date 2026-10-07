@@ -45,7 +45,7 @@ Buka http://localhost:3000 lalu pilih role. Di mode demo:
 - Data tersimpan di `node_modules/.cache/demo-db`.
 
 Skenario demo singkat:
-1. **Administrasi**: tombol hijau **Tambah pasien** di dashboard → daftarkan pasien, yang langsung masuk Poli.
+1. **Administrasi**: tombol **+ Pasien baru** di dashboard → daftarkan pasien, yang langsung masuk Poli.
 2. **Dokter**: buka pasien → isi form Poli → ACC.
 3. **RTT** → CT Simulator, lalu **Dokter** → Delineasi (isi dosis & jumlah fraksi), lalu **Fismed** → Planning.
 4. **Dokter** di ACC Planning: coba **Kembalikan** ke Planning dengan alasan, lalu Fismed kirim ulang dan Dokter ACC.
