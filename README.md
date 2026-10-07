@@ -28,7 +28,30 @@ Aturan alur ada di dua tempat yang harus selalu sama:
 
 Next.js 16 (App Router, Server Actions), Tailwind CSS 4, Supabase (Postgres, Auth, RLS), dan deploy di Vercel.
 
-## Setup
+## Menjalankan mode demo (tanpa setup)
+
+Jika `.env.local` belum berisi `NEXT_PUBLIC_SUPABASE_URL`, aplikasi otomatis berjalan dalam **mode demo**:
+
+```bash
+npm install
+npm run dev
+```
+
+Buka http://localhost:3000 lalu pilih role. Di mode demo:
+- Database Postgres (PGlite) berjalan langsung di laptop dan memakai migration SQL yang sama, jadi aturan ACC per role tetap berlaku.
+- Tidak perlu login. Role dipilih di halaman awal dan bisa diganti kapan saja lewat dropdown **"Lihat sebagai"** di kanan atas tanpa pindah halaman.
+- Data awalnya 10 pasien dummy di berbagai tahap. Tombol **Reset data demo** mengembalikan data ke kondisi awal.
+- Data tersimpan di `node_modules/.cache/demo-db`.
+
+Skenario demo singkat:
+1. **Administrasi**: + Pasien Baru → daftarkan pasien, yang langsung masuk Poli.
+2. **Dokter**: buka pasien → isi form Poli → ACC.
+3. **RTT** → CT Simulator, lalu **Dokter** → Delineasi (isi dosis & jumlah fraksi), lalu **Fismed** → Planning.
+4. **Dokter** di ACC Planning: coba **Kembalikan** ke Planning dengan alasan, lalu Fismed kirim ulang dan Dokter ACC.
+5. **RTT**: verifikasi (DRR/CBCT/EPID/QA), lalu catat fraksi sampai selesai. Untuk melihat penyelesaian dengan cepat, pakai pasien "Slamet Riyadi" (3/5 fraksi).
+6. **Perawat**: semua bisa dilihat, tapi tidak ada tombol aksi.
+
+## Setup dengan Supabase (untuk pemakaian sebenarnya)
 
 1. **Buat project Supabase** di https://supabase.com (gratis).
 2. Salin `.env.example` menjadi `.env.local`, lalu isi:

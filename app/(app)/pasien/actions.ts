@@ -2,7 +2,8 @@
 
 import { revalidatePath } from "next/cache";
 import { redirect } from "next/navigation";
-import { createClient } from "@/lib/supabase/server";
+import { getPatientStage } from "@/lib/data";
+import { rpc } from "@/lib/rpc";
 import type { ActionState } from "@/lib/types";
 import { PATIENT_IDENTITY_FIELDS, STAGE_MAP, isStageKey, type FieldDef } from "@/lib/workflow";
 
@@ -40,8 +41,7 @@ export async function createPatientAction(_prev: ActionState, formData: FormData
   const { payload, error } = readPayload(PATIENT_IDENTITY_FIELDS, formData);
   if (error || !payload) return { error };
 
-  const supabase = await createClient();
-  const { data, error: rpcError } = await supabase.rpc("create_patient", {
+  const { data, error: rpcError } = await rpc<string>("create_patient", {
     p_no_rm: payload.no_rm,
     p_nama: payload.nama,
     p_tgl_lahir: payload.tgl_lahir,
@@ -60,16 +60,15 @@ export async function advanceAction(patientId: string, _prev: ActionState, formD
   const stage = formData.get("stage");
   if (!isStageKey(stage)) return { error: "Tahap tidak valid" };
 
-  const supabase = await createClient();
-  const { data: current } = await supabase.from("patients").select("current_stage").eq("id", patientId).single();
-  if (current?.current_stage !== stage) {
+  const current = await getPatientStage(patientId);
+  if (current !== stage) {
     return { error: "Status pasien sudah berubah oleh pengguna lain. Muat ulang halaman." };
   }
 
   const { payload, error } = readPayload(STAGE_MAP[stage].fields, formData);
   if (error || !payload) return { error };
 
-  const { error: rpcError } = await supabase.rpc("advance_stage", {
+  const { error: rpcError } = await rpc("advance_stage", {
     p_patient: patientId,
     p_payload: payload,
     p_note: String(formData.get("note") ?? "").trim() || null,
@@ -86,8 +85,7 @@ export async function returnAction(patientId: string, _prev: ActionState, formDa
   if (!isStageKey(target)) return { error: "Pilih tahap tujuan" };
   if (!note) return { error: "Alasan pengembalian wajib diisi" };
 
-  const supabase = await createClient();
-  const { error } = await supabase.rpc("return_stage", { p_patient: patientId, p_target: target, p_note: note });
+  const { error } = await rpc("return_stage", { p_patient: patientId, p_target: target, p_note: note });
   if (error) return { error: error.message };
 
   refresh(patientId);
@@ -98,8 +96,7 @@ export async function recordFractionAction(patientId: string, _prev: ActionState
   const tanggal = String(formData.get("tanggal") ?? "");
   if (!tanggal) return { error: "Tanggal wajib diisi" };
 
-  const supabase = await createClient();
-  const { data, error } = await supabase.rpc("record_fraction", {
+  const { data, error } = await rpc<number>("record_fraction", {
     p_patient: patientId,
     p_tanggal: tanggal,
     p_mesin: String(formData.get("mesin") ?? "").trim() || null,

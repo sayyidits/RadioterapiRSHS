@@ -5,12 +5,13 @@ export function StageStepper({ current }: { current: StageKey }) {
   const done = current === "SELESAI";
 
   return (
-    <ol className="flex min-w-max items-start">
+    <ol className="flex w-full min-w-[720px] items-start">
       {STAGES.map((s, i) => {
         const state = done || i < currentIdx ? "done" : i === currentIdx ? "active" : "todo";
+        const last = i === STAGES.length - 1;
         return (
-          <li key={s.key} className="flex items-start">
-            <div className="flex w-24 flex-col items-center text-center">
+          <li key={s.key} className={`flex items-start ${last ? "" : "flex-1"}`}>
+            <div className="flex w-20 shrink-0 flex-col items-center text-center">
               <span
                 className={`grid h-9 w-9 place-items-center rounded-full text-sm font-semibold ring-4 ${
                   state === "done"
@@ -38,9 +39,9 @@ export function StageStepper({ current }: { current: StageKey }) {
               </span>
               {s.owner && <span className="mt-0.5 text-[11px] text-slate-400">{ROLE_SHORT[s.owner]}</span>}
             </div>
-            {i < STAGES.length - 1 && (
+            {!last && (
               <span
-                className={`mt-[18px] h-0.5 w-6 shrink-0 ${i < currentIdx || done ? "bg-teal-700" : "bg-slate-200"}`}
+                className={`mt-[18px] h-0.5 min-w-2 flex-1 ${i < currentIdx || done ? "bg-teal-700" : "bg-slate-200"}`}
                 aria-hidden="true"
               />
             )}

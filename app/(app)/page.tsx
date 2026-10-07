@@ -1,5 +1,7 @@
 import Link from "next/link";
 import { StageBadge } from "@/components/badges";
+import { ResetDemoButton } from "@/components/demo-controls";
+import { IS_DEMO } from "@/lib/mode";
 import { getCurrentUser } from "@/lib/auth";
 import { fractionCounts, listPatients } from "@/lib/data";
 import { daysSince } from "@/lib/format";
@@ -23,12 +25,15 @@ export default async function DashboardPage() {
 
   return (
     <div className="space-y-6">
-      <div>
-        <h1 className="text-xl font-semibold">Halo, {user.full_name}</h1>
-        <p className="text-sm text-slate-500">
-          Masuk sebagai {ROLES[user.role]}
-          {user.role === "perawat" && " (akses lihat saja)"}
-        </p>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <h1 className="text-xl font-semibold">Halo, {user.full_name}</h1>
+          <p className="text-sm text-slate-500">
+            Masuk sebagai {ROLES[user.role]}
+            {user.role === "perawat" && " (akses lihat saja)"}
+          </p>
+        </div>
+        {IS_DEMO && <ResetDemoButton />}
       </div>
 
       <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">

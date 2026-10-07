@@ -2,7 +2,10 @@ import Link from "next/link";
 import { RoleBadge } from "@/components/badges";
 import { Logo } from "@/components/logo";
 import { NavLinks } from "@/components/nav-links";
+import { RoleSwitcher } from "@/components/demo-controls";
 import { getCurrentUser } from "@/lib/auth";
+import { DEMO_USERS } from "@/lib/demo-seed";
+import { IS_DEMO } from "@/lib/mode";
 import { signOut } from "../login/actions";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
@@ -28,9 +31,13 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           <div className="ml-auto flex items-center gap-3">
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium leading-tight">{user.full_name}</p>
-              <p className="text-xs text-slate-500">{user.email}</p>
+              <p className="text-xs text-slate-500">{IS_DEMO ? "Mode demo" : user.email}</p>
             </div>
-            <RoleBadge role={user.role} />
+            {IS_DEMO ? (
+              <RoleSwitcher users={DEMO_USERS} currentId={user.id} />
+            ) : (
+              <RoleBadge role={user.role} />
+            )}
             <form action={signOut}>
               <button type="submit" className="btn btn-secondary px-3 py-1.5 text-xs">
                 Keluar
