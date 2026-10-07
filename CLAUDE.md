@@ -103,7 +103,8 @@ backend directly:
 ## UI rules decided with the user
 
 - The **"Alur pasien" kanban board** on the dashboard (`StageBoard` in `app/(app)/page.tsx`) is **demo/presentation only**. It renders only when `IS_DEMO` and must not appear in the production website.
-- The dashboard's primary action is a **green "Tambah pasien" button** (emerald, top-right, administrasi only) instead of relying on the header nav link, because the user found people miss the link at the top. Keep it in production.
+- The primary action is a **green "Tambah pasien" button** (`components/add-patient-button.tsx`, emerald, top-right of the dashboard and the patient list, administrasi only) instead of relying on the header nav link, because the user found people miss the link at the top. Keep it in production.
+- Patient list (`components/patient-table.tsx`): the stage column is labeled **"Status"**, and so is the list filter. The **Fraksi** column only shows a value while the patient is in `PENYINARAN` (to avoid distraction) and renders `done/total` with a pastel light-blue (`bg-sky-300`) progress bar under it. Every other status shows "-".
 - Registration form fields: No. RM, nama, tanggal lahir, jenis kelamin (L/P), no HP, diagnosis rujukan.
 
 ## Next.js 16 specifics used here

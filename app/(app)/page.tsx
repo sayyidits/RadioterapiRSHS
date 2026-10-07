@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AddPatientButton } from "@/components/add-patient-button";
 import { StageBadge } from "@/components/badges";
 import { getCurrentUser } from "@/lib/auth";
 import { IS_DEMO } from "@/lib/mode";
@@ -33,13 +34,7 @@ export default async function DashboardPage() {
           </p>
         </div>
         {user.role === "administrasi" && (
-          <Link
-            href="/pasien/baru"
-            className="btn bg-emerald-600 px-5 py-2.5 text-white shadow-sm hover:bg-emerald-700"
-          >
-            <span className="text-lg leading-none" aria-hidden="true">+</span>
-            Tambah pasien
-          </Link>
+          <AddPatientButton />
         )}
       </div>
 

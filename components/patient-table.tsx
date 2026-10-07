@@ -15,7 +15,7 @@ export function PatientTable({ patients, fractions }: { patients: Patient[]; fra
           <tr>
             <th className="px-5 py-2.5 font-medium">Pasien</th>
             <th className="px-3 py-2.5 font-medium">Diagnosis</th>
-            <th className="px-3 py-2.5 font-medium">Tahap</th>
+            <th className="px-3 py-2.5 font-medium">Status</th>
             <th className="px-3 py-2.5 font-medium">Menunggu</th>
             <th className="px-3 py-2.5 font-medium">Lama di tahap</th>
             <th className="px-5 py-2.5 font-medium">Fraksi</th>
@@ -43,13 +43,38 @@ export function PatientTable({ patients, fractions }: { patients: Patient[]; fra
                   {p.current_stage === "SELESAI" ? "-" : daysSince(p.stage_entered_at)}
                 </td>
                 <td className="whitespace-nowrap px-5 py-3 text-slate-600">
-                  {p.total_fraksi ? `${fractions[p.id] ?? 0}/${p.total_fraksi}` : "-"}
+                  {/* Fraksi hanya relevan saat penyinaran berjalan */}
+                  {p.current_stage === "PENYINARAN" && p.total_fraksi ? (
+                    <FractionProgress done={fractions[p.id] ?? 0} total={p.total_fraksi} />
+                  ) : (
+                    "-"
+                  )}
                 </td>
               </tr>
             );
           })}
         </tbody>
       </table>
+    </div>
+  );
+}
+
+function FractionProgress({ done, total }: { done: number; total: number }) {
+  return (
+    <div className="w-24">
+      <span>
+        {done}/{total}
+      </span>
+      <div
+        className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100"
+        role="progressbar"
+        aria-valuemin={0}
+        aria-valuemax={total}
+        aria-valuenow={done}
+        aria-label={`${done} dari ${total} fraksi`}
+      >
+        <div className="h-full rounded-full bg-sky-300" style={{ width: `${(done / total) * 100}%` }} />
+      </div>
     </div>
   );
 }

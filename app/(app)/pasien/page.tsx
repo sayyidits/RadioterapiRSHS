@@ -1,4 +1,5 @@
 import Link from "next/link";
+import { AddPatientButton } from "@/components/add-patient-button";
 import { PatientTable } from "@/components/patient-table";
 import { getCurrentUser } from "@/lib/auth";
 import { fractionCounts, listPatients } from "@/lib/data";
@@ -20,9 +21,7 @@ export default async function PatientsPage({ searchParams }: PageProps<"/pasien"
           <p className="text-sm text-slate-500">{patients.length} pasien</p>
         </div>
         {user.role === "administrasi" && (
-          <Link href="/pasien/baru" className="btn btn-primary">
-            + Pasien baru
-          </Link>
+          <AddPatientButton />
         )}
       </div>
 
@@ -32,9 +31,9 @@ export default async function PatientsPage({ searchParams }: PageProps<"/pasien"
           <input id="q" name="q" defaultValue={q} placeholder="Nama atau No. RM" className="input" />
         </div>
         <div className="w-full sm:w-56">
-          <label htmlFor="tahap" className="label">Tahap</label>
+          <label htmlFor="tahap" className="label">Status</label>
           <select id="tahap" name="tahap" defaultValue={stage ?? ""} className="input">
-            <option value="">Semua tahap</option>
+            <option value="">Semua status</option>
             {STAGES.map((s) => (
               <option key={s.key} value={s.key}>
                 {s.label}
