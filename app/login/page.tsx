@@ -45,7 +45,8 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
             ))}
           </ol>
         </div>
-        <p className="text-xs text-teal-200">Gunakan hanya data dummy sampai sistem disetujui.</p>
+        {/* Pengisi bagian bawah supaya judul tetap di tengah panel (justify-between) */}
+        <div aria-hidden="true" />
       </section>
       <section className="flex items-center justify-center px-4 py-12">
         <div className={`w-full ${IS_DEMO ? "max-w-md" : "max-w-sm"}`}>
