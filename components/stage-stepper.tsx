@@ -1,4 +1,4 @@
-import { ROLE_SHORT, STAGES, stageIndex, type StageKey } from "@/lib/workflow";
+import { STAGES, actorsLabel, stageIndex, type StageKey } from "@/lib/workflow";
 
 export function StageStepper({ current }: { current: StageKey }) {
   const currentIdx = stageIndex(current);
@@ -37,7 +37,7 @@ export function StageStepper({ current }: { current: StageKey }) {
               >
                 {s.label}
               </span>
-              {s.owner && <span className="mt-0.5 text-[11px] text-slate-400">{ROLE_SHORT[s.owner]}</span>}
+              {s.owner && <span className="mt-0.5 text-[11px] text-slate-400">{actorsLabel(s.key)}</span>}
             </div>
             {!last && (
               <span

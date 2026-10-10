@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Flow Radioterapi",
+  title: "Radioterapi RSHS",
   description: "Tracking pasien radioterapi dari pendaftaran hingga penyinaran selesai",
 };
 

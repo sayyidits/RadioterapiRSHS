@@ -1,6 +1,9 @@
 // Definisi alur radioterapi. Urutan tahap, penanggung jawab, dan tujuan
-// "Kembalikan" harus sama dengan fungsi stage_owner / can_return di
-// supabase/migrations/0001_init.sql.
+// "Kembalikan" harus sama dengan fungsi stage_owner / can_return / can_act di
+// supabase/migrations (0001_init.sql, 0002_dpjp_mesin_absensi.sql, 0003_alur_ringkas.sql,
+// 0004_jadwal_kuota.sql).
+import { dateWIB, todayISO } from "./format";
+import { nextWorkingDay, workingDayFrom } from "./holidays";
 
 export const ROLES = {
   dokter: "Dokter Sp.Onk.Rad",
@@ -26,7 +29,6 @@ export const STAGE_KEYS = [
   "CT_SIM",
   "DELINEASI",
   "PLANNING",
-  "ACC_PLAN",
   "VERIFIKASI",
   "PENYINARAN",
   "SELESAI",
@@ -37,13 +39,14 @@ export type StageKey = (typeof STAGE_KEYS)[number];
 export type FieldDef = {
   name: string;
   label: string;
-  type: "text" | "textarea" | "date" | "number" | "select" | "checkboxes";
+  /** "ctsim": pemilih tanggal CT Sim berdasarkan kuota pesawat (lib/booking.ts) */
+  type: "text" | "textarea" | "date" | "number" | "select" | "checkboxes" | "ctsim";
   required?: boolean;
   options?: string[];
   placeholder?: string;
   step?: string;
   /** Nilai awal diambil dari kolom tabel patients (bukan dari data tahap) */
-  column?: "no_rm" | "nama" | "tgl_lahir" | "jenis_kelamin" | "no_hp" | "diagnosis" | "dosis_total_gy" | "total_fraksi";
+  column?: "no_rm" | "nama" | "tgl_lahir" | "jenis_kelamin" | "no_hp" | "diagnosis" | "dosis_total_gy" | "total_fraksi" | "mesin";
 };
 
 export type StageDef = {
@@ -51,6 +54,8 @@ export type StageDef = {
   label: string;
   short: string;
   owner: Role | null;
+  /** Role lain yang juga boleh ACC / mengembalikan di tahap ini */
+  alsoBy?: Role[];
   description: string;
   actionLabel?: string;
   fields: FieldDef[];
@@ -58,6 +63,27 @@ export type StageDef = {
 };
 
 export const JENIS_KELAMIN: Record<string, string> = { L: "Laki-laki", P: "Perempuan" };
+
+/** Mesin radioterapi (harus sama dengan is_valid_mesin di 0002_dpjp_mesin_absensi.sql) */
+export const MESIN = ["Synergy", "Precise", "Cobalt", "Brakiterapi"];
+
+/** Pesawat radiasi eksternal yang tampil di Info Pesawat */
+export const MESIN_EKSTERNAL = ["Synergy", "Precise", "Cobalt"];
+
+/**
+ * Kuota pasien per hari per pesawat (sama dengan kuota_pesawat() di 0004_jadwal_kuota.sql).
+ * Mutlak saat memilih tanggal CT Sim di Poli. Brakiterapi tanpa kuota.
+ */
+export const KUOTA_PESAWAT: Record<string, number> = { Synergy: 65, Precise: 65, Cobalt: 30 };
+
+export function kuotaOf(mesin: string | null | undefined): number | null {
+  return (mesin && KUOTA_PESAWAT[mesin]) || null;
+}
+
+/** Verifikasi = CT Sim + 14 hari kalender, digeser ke hari kerja; fraksi 1 di hari yang sama. */
+export const JEDA_CT_VERIFIKASI = 14;
+
+const MESIN_FIELD: FieldDef = { name: "mesin", label: "Mesin", type: "select", required: true, options: MESIN, column: "mesin" };
 
 export const PATIENT_IDENTITY_FIELDS: FieldDef[] = [
   { name: "no_rm", label: "No. Rekam Medis", type: "text", required: true, column: "no_rm" },
@@ -84,16 +110,22 @@ export const STAGES: StageDef[] = [
     label: "Poli Radioterapi",
     short: "Poli",
     owner: "dokter",
-    description: "Pemeriksaan dan penetapan indikasi radioterapi oleh dokter.",
+    alsoBy: ["perawat"],
+    description:
+      "Pemeriksaan, penetapan indikasi, preskripsi dosis, dan jadwal CT Sim sesuai kuota pesawat oleh dokter, dapat diisi bersama perawat.",
     actionLabel: "ACC, kirim ke CT Simulator",
     fields: [
       { name: "diagnosis_kerja", label: "Diagnosis kerja", type: "textarea", required: true },
       { name: "stadium", label: "Stadium", type: "text", placeholder: "mis. T2N1M0 / IIB" },
       { name: "intent", label: "Tujuan terapi", type: "select", required: true, options: ["Kuratif", "Paliatif", "Adjuvan", "Neoadjuvan"] },
       { name: "area_radiasi", label: "Area radiasi", type: "text", required: true, placeholder: "mis. Serviks + KGB pelvis" },
+      { name: "dosis_total_gy", label: "Dosis total (Gy)", type: "number", required: true, step: "0.01", column: "dosis_total_gy" },
+      { name: "total_fraksi", label: "Jumlah fraksi", type: "number", required: true, step: "1", column: "total_fraksi" },
+      { ...MESIN_FIELD, label: "Rencana pesawat" },
+      { name: "tgl_ct_sim", label: "Tanggal CT Sim", type: "ctsim", required: true },
       { name: "catatan", label: "Catatan", type: "textarea" },
     ],
-    returnTargets: ["PENDAFTARAN"],
+    returnTargets: [],
   },
   {
     key: "CT_SIM",
@@ -108,20 +140,17 @@ export const STAGES: StageDef[] = [
       { name: "imobilisasi", label: "Alat imobilisasi", type: "text", placeholder: "mis. Thermoplastic mask, vacloc" },
       { name: "catatan", label: "Catatan", type: "textarea" },
     ],
-    returnTargets: ["POLI"],
+    // Poli sudah pasti selesai saat pasien di CT Sim, jadi tidak ada Kembalikan
+    returnTargets: [],
   },
   {
     key: "DELINEASI",
     label: "Delineasi",
     short: "Delineasi",
     owner: "dokter",
-    description: "Dokter membuat kontur target & OAR serta menetapkan preskripsi dosis.",
+    description: "Dokter membuat kontur target & OAR.",
     actionLabel: "Selesai, kirim ke Planning",
-    fields: [
-      { name: "dosis_total_gy", label: "Dosis total (Gy)", type: "number", required: true, step: "0.01", column: "dosis_total_gy" },
-      { name: "total_fraksi", label: "Jumlah fraksi", type: "number", required: true, step: "1", column: "total_fraksi" },
-      { name: "catatan_kontur", label: "Catatan kontur", type: "textarea" },
-    ],
+    fields: [{ name: "catatan_kontur", label: "Catatan kontur", type: "textarea" }],
     returnTargets: ["CT_SIM"],
   },
   {
@@ -129,28 +158,15 @@ export const STAGES: StageDef[] = [
     label: "Planning",
     short: "Planning",
     owner: "fismed",
-    description: "Fisikawan medis menyusun rencana penyinaran di TPS.",
-    actionLabel: "Kirim ke dokter untuk ACC",
+    description: "Fisikawan medis menyusun dan meng-ACC rencana penyinaran (sudah didiskusikan dengan dokter).",
+    actionLabel: "ACC plan, kirim ke Verifikasi",
     fields: [
       { name: "teknik", label: "Teknik", type: "select", required: true, options: ["3DCRT", "IMRT", "VMAT"] },
+      MESIN_FIELD,
       { name: "tps", label: "TPS / nama plan", type: "text" },
       { name: "catatan", label: "Catatan plan", type: "textarea" },
     ],
-    returnTargets: ["DELINEASI"],
-  },
-  {
-    key: "ACC_PLAN",
-    label: "ACC Planning",
-    short: "ACC Plan",
-    owner: "dokter",
-    description: "Dokter meninjau dan menyetujui rencana penyinaran.",
-    actionLabel: "ACC plan, kirim ke Verifikasi",
-    fields: [
-      { name: "dosis_total_gy", label: "Dosis total (Gy)", type: "number", required: true, step: "0.01", column: "dosis_total_gy" },
-      { name: "total_fraksi", label: "Jumlah fraksi", type: "number", required: true, step: "1", column: "total_fraksi" },
-      { name: "catatan", label: "Catatan persetujuan", type: "textarea" },
-    ],
-    returnTargets: ["PLANNING"],
+    returnTargets: ["DELINEASI", "CT_SIM"],
   },
   {
     key: "VERIFIKASI",
@@ -161,11 +177,10 @@ export const STAGES: StageDef[] = [
     actionLabel: "Lolos verifikasi, mulai penyinaran",
     fields: [
       { name: "tanggal_verifikasi", label: "Tanggal verifikasi", type: "date", required: true },
-      { name: "mesin", label: "Mesin", type: "text", required: true, placeholder: "mis. LINAC 1" },
       { name: "metode", label: "Metode verifikasi", type: "checkboxes", required: true, options: ["DRR", "CBCT", "EPID", "QA"] },
       { name: "hasil", label: "Hasil / catatan", type: "textarea" },
     ],
-    returnTargets: ["PLANNING", "CT_SIM"],
+    returnTargets: ["PLANNING", "DELINEASI", "CT_SIM"],
   },
   {
     key: "PENYINARAN",
@@ -174,7 +189,8 @@ export const STAGES: StageDef[] = [
     owner: "rtt",
     description: "RTT mencatat setiap fraksi penyinaran hingga selesai.",
     fields: [],
-    returnTargets: [],
+    // Replanning di tengah penyinaran (mis. tumor membesar), paling jauh CT ulang
+    returnTargets: ["VERIFIKASI", "PLANNING", "DELINEASI", "CT_SIM"],
   },
   {
     key: "SELESAI",
@@ -197,9 +213,74 @@ export function isStageKey(value: unknown): value is StageKey {
   return typeof value === "string" && (STAGE_KEYS as readonly string[]).includes(value);
 }
 
+/** Role yang boleh ACC / mengembalikan di tahap ini */
+export function stageActors(key: StageKey): Role[] {
+  const s = STAGE_MAP[key];
+  return s.owner ? [s.owner, ...(s.alsoBy ?? [])] : [];
+}
+
+/** "Dokter / Perawat", "RTT", atau "-" */
+export function actorsLabel(key: StageKey) {
+  const actors = stageActors(key);
+  return actors.length ? actors.map((r) => ROLE_SHORT[r]).join(" / ") : "-";
+}
+
 /** Tahap yang perlu ditindaklanjuti oleh role ini */
 export function stagesOwnedBy(role: Role): StageKey[] {
-  return STAGES.filter((s) => s.owner === role).map((s) => s.key);
+  return STAGE_KEYS.filter((k) => stageActors(k).includes(role));
+}
+
+/**
+ * Apakah user ini boleh menindaklanjuti pasien di tahapnya sekarang.
+ * Tahap dokter hanya untuk DPJP pasien (sama dengan can_act di SQL).
+ */
+export function canActOn(
+  patient: { current_stage: StageKey; dpjp_id: string | null; stage_entered_at: string },
+  user: { id: string; role: Role },
+) {
+  if (!stageActors(patient.current_stage).includes(user.role)) return false;
+  if (poliHangus(patient, todayISO())) return false;
+  if (user.role === "dokter") return patient.dpjp_id === null || patient.dpjp_id === user.id;
+  return true;
+}
+
+/**
+ * Kunjungan Poli hanya berlaku di hari pasien masuk Poli (didaftarkan, didaftarkan ulang, atau
+ * dikembalikan ke Poli). Lewat hari itu tanpa ACC = hangus, dan administrasi harus mendaftarkan
+ * ulang saat pasien datang lagi. Sama dengan poli_hangus() di 0004_jadwal_kuota.sql.
+ */
+export function poliHangus(patient: { current_stage: StageKey; stage_entered_at: string }, today: string) {
+  return patient.current_stage === "POLI" && dateWIB(patient.stage_entered_at) < today;
+}
+
+/**
+ * Due date tahap saat ini (YYYY-MM-DD) untuk urutan prioritas "Tugas saya".
+ * CT Sim: tanggal CT Sim. Delineasi, Planning, Verifikasi: tanggal verifikasi (H+14).
+ * Penyinaran: hari kerja ini (atau berikutnya bila fraksi hari ini sudah dicatat). Poli: belum dijadwalkan (null).
+ * Pasien yang dikembalikan setelah tanggal rencananya lewat (replanning, CT ulang) jatuh tempo
+ * di hari ia dikembalikan, bukan di tanggal lama.
+ */
+export function dueDate(
+  patient: { current_stage: StageKey; stage_entered_at: string; tgl_ct_sim: string | null; tgl_verifikasi: string | null },
+  today: string,
+  fractionToday = false,
+): string | null {
+  const notBeforeEntered = (d: string | null) => {
+    const entered = dateWIB(patient.stage_entered_at);
+    return d && d < entered ? entered : d;
+  };
+  switch (patient.current_stage) {
+    case "CT_SIM":
+      return notBeforeEntered(patient.tgl_ct_sim);
+    case "DELINEASI":
+    case "PLANNING":
+    case "VERIFIKASI":
+      return notBeforeEntered(patient.tgl_verifikasi);
+    case "PENYINARAN":
+      return fractionToday ? nextWorkingDay(today) : workingDayFrom(today);
+    default:
+      return null;
+  }
 }
 
 export const STAGE_COLORS: Record<StageKey, string> = {
@@ -208,7 +289,6 @@ export const STAGE_COLORS: Record<StageKey, string> = {
   CT_SIM: "bg-cyan-50 text-cyan-700 ring-cyan-200",
   DELINEASI: "bg-indigo-50 text-indigo-700 ring-indigo-200",
   PLANNING: "bg-violet-50 text-violet-700 ring-violet-200",
-  ACC_PLAN: "bg-fuchsia-50 text-fuchsia-700 ring-fuchsia-200",
   VERIFIKASI: "bg-amber-50 text-amber-800 ring-amber-200",
   PENYINARAN: "bg-orange-50 text-orange-700 ring-orange-200",
   SELESAI: "bg-emerald-50 text-emerald-700 ring-emerald-200",

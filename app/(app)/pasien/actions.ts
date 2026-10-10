@@ -34,12 +34,17 @@ function readPayload(fields: FieldDef[], formData: FormData) {
 function refresh(patientId?: string) {
   revalidatePath("/");
   revalidatePath("/pasien");
+  revalidatePath("/pasien/saya");
+  revalidatePath("/penyinaran");
+  revalidatePath("/pesawat");
   if (patientId) revalidatePath(`/pasien/${patientId}`);
 }
 
 export async function createPatientAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { payload, error } = readPayload(PATIENT_IDENTITY_FIELDS, formData);
   if (error || !payload) return { error };
+  const dpjp = String(formData.get("dpjp") ?? "");
+  if (!dpjp) return { error: "Dokter DPJP wajib dipilih" };
 
   const { data, error: rpcError } = await rpc<string>("create_patient", {
     p_no_rm: payload.no_rm,
@@ -48,6 +53,7 @@ export async function createPatientAction(_prev: ActionState, formData: FormData
     p_jenis_kelamin: payload.jenis_kelamin,
     p_no_hp: payload.no_hp ?? null,
     p_diagnosis: payload.diagnosis,
+    p_dpjp: dpjp,
     p_note: String(formData.get("note") ?? "").trim() || null,
   });
   if (rpcError) return { error: rpcError.message };
@@ -92,13 +98,10 @@ export async function returnAction(patientId: string, _prev: ActionState, formDa
   return { success: `Pasien dikembalikan ke ${STAGE_MAP[target].label}.` };
 }
 
+/** Tanggal fraksi selalu hari ini (ditentukan di database). */
 export async function recordFractionAction(patientId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
-  const tanggal = String(formData.get("tanggal") ?? "");
-  if (!tanggal) return { error: "Tanggal wajib diisi" };
-
   const { data, error } = await rpc<number>("record_fraction", {
     p_patient: patientId,
-    p_tanggal: tanggal,
     p_mesin: String(formData.get("mesin") ?? "").trim() || null,
     p_catatan: String(formData.get("catatan") ?? "").trim() || null,
   });
@@ -106,4 +109,31 @@ export async function recordFractionAction(patientId: string, _prev: ActionState
 
   refresh(patientId);
   return { success: `Fraksi ke-${data} tercatat.` };
+}
+
+export async function setAttendanceAction(patientId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  const hadir = formData.get("hadir");
+  if (hadir !== "true" && hadir !== "false") return { error: "Pilih hadir atau tidak hadir" };
+
+  const { error } = await rpc("set_attendance", {
+    p_patient: patientId,
+    p_hadir: hadir === "true",
+    p_catatan: String(formData.get("catatan") ?? "").trim() || null,
+  });
+  if (error) return { error: error.message };
+
+  refresh(patientId);
+  return { success: hadir === "true" ? "Tercatat hadir." : "Tercatat tidak hadir." };
+}
+
+/** Kunjungan Poli yang hangus didaftarkan ulang oleh administrasi, berlaku hari ini. */
+export async function reRegisterPoliAction(patientId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
+  const { error } = await rpc("daftar_ulang_poli", {
+    p_patient: patientId,
+    p_note: String(formData.get("note") ?? "").trim() || null,
+  });
+  if (error) return { error: error.message };
+
+  refresh(patientId);
+  return { success: "Pasien didaftarkan ulang ke Poli untuk hari ini." };
 }

@@ -11,9 +11,18 @@ import { signOut } from "../login/actions";
 export default async function AppLayout({ children }: LayoutProps<"/">) {
   const user = await getCurrentUser();
 
+  // Dokter: "Daftar Pasien" = pasien DPJP-nya, "Daftar Pasien Penuh" = semua pasien
   const links = [
     { href: "/", label: "Dashboard" },
-    { href: "/pasien", label: "Daftar Pasien" },
+    ...(user.role === "dokter"
+      ? [
+          { href: "/pasien/saya", label: "Daftar Pasien" },
+          { href: "/pasien", label: "Daftar Pasien Penuh" },
+        ]
+      : [{ href: "/pasien", label: "Daftar Pasien" }]),
+    { href: "/pesawat", label: "Info Pesawat" },
+    ...(user.role === "administrasi" ? [{ href: "/penyinaran", label: "Absen Penyinaran" }] : []),
+    ...(user.role === "rtt" ? [{ href: "/penyinaran", label: "Penyinaran Hari Ini" }] : []),
     ...(user.role === "administrasi" ? [{ href: "/pasien/baru", label: "+ Pasien Baru" }] : []),
   ];
 
@@ -23,7 +32,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
         <div className="mx-auto flex max-w-7xl flex-wrap items-center gap-x-6 gap-y-2 px-4 py-3">
           <Link href="/" className="flex items-center gap-2.5">
             <Logo />
-            <span className="font-semibold tracking-tight">Flow Radioterapi</span>
+            <span className="font-semibold tracking-tight">Radioterapi RSHS</span>
           </Link>
           <div className="order-3 w-full sm:order-none sm:w-auto sm:flex-1">
             <NavLinks links={links} />

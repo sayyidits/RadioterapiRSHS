@@ -1,15 +1,35 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
+import { AttendanceControl } from "@/components/attendance-control";
 import { StageBadge } from "@/components/badges";
+import { DueBadge } from "@/components/due-badge";
 import { EventTimeline } from "@/components/event-timeline";
 import { FractionForm } from "@/components/fraction-form";
+import { FractionSchedule } from "@/components/fraction-schedule";
+import { PoliExpired } from "@/components/poli-expired";
+import { ReturnForm } from "@/components/return-form";
 import { StageActionPanel } from "@/components/stage-action-panel";
 import { StageStepper } from "@/components/stage-stepper";
 import { getCurrentUser } from "@/lib/auth";
-import { getPatient } from "@/lib/data";
-import { age, formatDate, formatDateTime, todayISO } from "@/lib/format";
-import type { Fraction, Patient } from "@/lib/types";
-import { JENIS_KELAMIN, ROLES, STAGES, STAGE_MAP, type FieldDef, type StageKey } from "@/lib/workflow";
+import { cekKuota, type Hunian } from "@/lib/booking";
+import { attendanceDays, attendanceToday, fractionsToday, getPatient, hunianPesawat } from "@/lib/data";
+import { age, dateWIB, formatDate, formatDateTime, todayISO } from "@/lib/format";
+import { addDays, workingDayFrom } from "@/lib/holidays";
+import { buildSchedule, type ScheduleRow } from "@/lib/schedule";
+import type { AttendanceEntry, Fraction, Patient, Profile } from "@/lib/types";
+import {
+  JENIS_KELAMIN,
+  MESIN,
+  ROLES,
+  STAGES,
+  STAGE_MAP,
+  actorsLabel,
+  canActOn,
+  dueDate,
+  poliHangus,
+  type FieldDef,
+  type StageKey,
+} from "@/lib/workflow";
 
 export default async function PatientPage({ params }: PageProps<"/pasien/[id]">) {
   const { id } = await params;
@@ -18,7 +38,39 @@ export default async function PatientPage({ params }: PageProps<"/pasien/[id]">)
 
   const { patient, events, fractions } = result;
   const stage = STAGE_MAP[patient.current_stage];
-  const isOwner = stage.owner === user.role;
+  const isOwner = canActOn(patient, user);
+  const todayStr = todayISO();
+  // Kunjungan Poli yang tidak di-ACC di harinya
+  const hangus = poliHangus(patient, todayStr);
+  // Due date ditampilkan di samping nama tahap Delineasi & Planning
+  const due = patient.current_stage === "DELINEASI" || patient.current_stage === "PLANNING" ? dueDate(patient, todayStr) : null;
+  const inTreatment = patient.current_stage === "PENYINARAN";
+  // Absensi hanya relevan saat penyinaran (daftar id kosong = tanpa query)
+  const ids = inTreatment ? [patient.id] : [];
+  const [attendance, today] = await Promise.all([attendanceToday(ids), fractionsToday(ids)]);
+  const attendanceEntries = attendance[patient.id] ?? [];
+  const todayCount = today[patient.id] ?? 0;
+  // Jadwal fraksi muncul setelah fraksi pertama diberikan; proyeksi hanya saat penyinaran berjalan
+  const schedule =
+    fractions.length > 0
+      ? buildSchedule({
+          fractions,
+          total: patient.total_fraksi ?? fractions.length,
+          attendance: await attendanceDays(patient.id),
+          today: todayISO(),
+          project: inTreatment,
+        })
+      : [];
+  // Poli memesan slot pesawat (tanggal CT Sim), Planning boleh mengganti pesawat yang masih ada kuotanya.
+  // Hunian dihitung tanpa pasien ini sendiri.
+  const needsHunian = isOwner && (patient.current_stage === "POLI" || patient.current_stage === "PLANNING");
+  const hunian = needsHunian ? await hunianPesawat(todayStr, addDays(todayStr, 200), patient.id) : null;
+  const booking =
+    hunian && patient.current_stage === "POLI" ? { hunian, today: todayStr, fraksiDone: fractions.length } : undefined;
+  const optionLabels =
+    hunian && patient.current_stage === "PLANNING"
+      ? { mesin: machineOptionLabels(hunian, patient, fractions.length, todayStr) }
+      : undefined;
 
   return (
     <div className="space-y-6">
@@ -40,22 +92,44 @@ export default async function PatientPage({ params }: PageProps<"/pasien/[id]">)
             <section className="card p-5">
               <div className="mb-4 flex flex-wrap items-start justify-between gap-2">
                 <div>
-                  <h2 className="font-semibold">Tahap saat ini: {stage.label}</h2>
+                  <h2 className="flex flex-wrap items-center gap-2 font-semibold">
+                    Tahap saat ini: {stage.label}
+                    {due && (
+                      <span className="flex items-center gap-1.5 text-xs font-normal text-slate-500">
+                        Due date <DueBadge due={due} today={todayStr} />
+                      </span>
+                    )}
+                  </h2>
                   <p className="text-sm text-slate-500">{stage.description}</p>
                 </div>
                 <span className="text-xs text-slate-500">Di tahap ini sejak {formatDateTime(patient.stage_entered_at)}</span>
               </div>
 
-              {patient.current_stage === "PENYINARAN" ? (
-                <FractionSection patient={patient} fractions={fractions} canRecord={user.role === "rtt"} />
+              {hangus ? (
+                <PoliExpired
+                  patientId={patient.id}
+                  tanggal={formatDate(dateWIB(patient.stage_entered_at))}
+                  canReRegister={user.role === "administrasi"}
+                />
+              ) : inTreatment ? (
+                <FractionSection
+                  patient={patient}
+                  fractions={fractions}
+                  user={user}
+                  attendance={attendanceEntries}
+                  todayCount={todayCount}
+                  schedule={schedule}
+                />
               ) : isOwner ? (
                 <StageActionPanel
                   patientId={patient.id}
                   stage={patient.current_stage}
                   defaults={fieldDefaults(patient, patient.current_stage)}
+                  optionLabels={optionLabels}
+                  booking={booking}
                 />
               ) : (
-                <WaitingNotice role={stage.owner ? ROLES[stage.owner] : "-"} />
+                <WaitingNotice role={waitingFor(patient)} />
               )}
             </section>
           )}
@@ -70,10 +144,18 @@ export default async function PatientPage({ params }: PageProps<"/pasien/[id]">)
             </section>
           )}
 
-          {patient.current_stage === "SELESAI" && fractions.length > 0 && (
+          {/* Selesai, atau sedang replanning setelah sebagian fraksi diberikan */}
+          {!inTreatment && fractions.length > 0 && (
             <section className="card p-5">
-              <h2 className="mb-3 font-semibold">Catatan fraksi</h2>
-              <FractionTable fractions={fractions} />
+              <h2 className="mb-3 font-semibold">
+                Catatan fraksi
+                {patient.current_stage !== "SELESAI" && (
+                  <span className="ml-2 text-sm font-normal text-slate-500">
+                    {fractions.length} fraksi sudah diberikan sebelum replanning
+                  </span>
+                )}
+              </h2>
+              <FractionSchedule rows={schedule} mesin={patient.mesin} />
             </section>
           )}
 
@@ -101,6 +183,14 @@ function PatientHeader({ patient, fractionsDone }: { patient: Patient; fractions
             {patient.no_hp && <> · {patient.no_hp}</>}
           </p>
           <p className="mt-1 text-sm text-slate-600">{patient.diagnosis}</p>
+          <p className="mt-1 text-sm text-slate-600">
+            DPJP: <span className="font-medium text-slate-800">{patient.dpjp?.full_name ?? "-"}</span>
+            {patient.mesin && (
+              <>
+                {" "}· Mesin: <span className="font-medium text-slate-800">{patient.mesin}</span>
+              </>
+            )}
+          </p>
         </div>
         <div className="flex flex-col items-end gap-2">
           <StageBadge stage={patient.current_stage} className="text-sm" />
@@ -142,59 +232,73 @@ function FractionProgress({ done, total }: { done: number; total: number }) {
 function FractionSection({
   patient,
   fractions,
-  canRecord,
+  user,
+  attendance,
+  todayCount,
+  schedule,
 }: {
   patient: Patient;
   fractions: Fraction[];
-  canRecord: boolean;
+  user: Profile;
+  attendance: AttendanceEntry[];
+  todayCount: number;
+  schedule: ScheduleRow[];
 }) {
   const total = patient.total_fraksi ?? 0;
-  const defaultMesin = String(patient.data.VERIFIKASI?.mesin ?? "");
+  const present = attendance.at(-1)?.hadir === true;
   return (
     <div className="space-y-5">
-      {canRecord ? (
+      <div className="rounded-lg border border-slate-200 p-4">
+        <h3 className="mb-2 text-sm font-semibold">Kehadiran hari ini</h3>
+        <AttendanceControl
+          key={attendance.at(-1)?.id ?? "none"}
+          patientId={patient.id}
+          entries={attendance}
+          canEdit={user.role === "administrasi" || user.role === "rtt"}
+          fractionsToday={todayCount}
+        />
+      </div>
+      {user.role !== "rtt" ? (
+        <WaitingNotice role={ROLES.rtt} text="Fraksi penyinaran dicatat oleh RTT." />
+      ) : present ? (
         <FractionForm
           patientId={patient.id}
           nextFraction={fractions.length + 1}
           total={total}
-          defaultMesin={defaultMesin}
-          today={todayISO()}
+          defaultMesin={patient.mesin ?? ""}
         />
       ) : (
-        <WaitingNotice role={ROLES.rtt} text="Fraksi penyinaran dicatat oleh RTT." />
+        <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-inset ring-slate-200">
+          Fraksi baru bisa dicatat setelah pasien tercatat <b>hadir</b> hari ini.
+        </p>
       )}
-      {fractions.length > 0 && <FractionTable fractions={fractions} />}
+      {schedule.length > 0 && (
+        <div>
+          <h3 className="mb-2 text-sm font-semibold">Catatan & jadwal fraksi</h3>
+          <FractionSchedule rows={schedule} mesin={patient.mesin} />
+        </div>
+      )}
+      {user.role === "rtt" && (
+        <details className="rounded-lg border border-rose-200 p-4">
+          <summary className="cursor-pointer text-sm font-medium text-rose-700">Kembalikan untuk replanning</summary>
+          <p className="my-4 text-sm text-slate-600">
+            Fraksi yang sudah tercatat tetap dihitung. Penyinaran dilanjutkan setelah pasien kembali melewati tahap-tahapnya.
+          </p>
+          <ReturnForm patientId={patient.id} stage="PENYINARAN" />
+        </details>
+      )}
     </div>
   );
 }
 
-function FractionTable({ fractions }: { fractions: Fraction[] }) {
-  return (
-    <div className="overflow-x-auto">
-      <table className="w-full text-left text-sm">
-        <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
-          <tr>
-            <th className="py-2 pr-3 font-medium">Fx</th>
-            <th className="py-2 pr-3 font-medium">Tanggal</th>
-            <th className="py-2 pr-3 font-medium">Mesin</th>
-            <th className="py-2 pr-3 font-medium">RTT</th>
-            <th className="py-2 font-medium">Catatan</th>
-          </tr>
-        </thead>
-        <tbody className="divide-y divide-slate-100">
-          {[...fractions].reverse().map((f) => (
-            <tr key={f.id}>
-              <td className="py-2 pr-3 font-medium">{f.fraksi_ke}</td>
-              <td className="whitespace-nowrap py-2 pr-3">{formatDate(f.tanggal)}</td>
-              <td className="py-2 pr-3">{f.mesin ?? "-"}</td>
-              <td className="py-2 pr-3">{f.rtt?.full_name ?? "-"}</td>
-              <td className="py-2 text-slate-600">{f.catatan ?? ""}</td>
-            </tr>
-          ))}
-        </tbody>
-      </table>
-    </div>
-  );
+/** Siapa yang ditunggu: untuk tahap dokter sebutkan nama DPJP */
+function waitingFor(patient: Patient) {
+  const stage = STAGE_MAP[patient.current_stage];
+  if (stage.owner === "dokter" && patient.dpjp) {
+    const nurse = stage.alsoBy?.includes("perawat") ? " / Perawat" : "";
+    return `${patient.dpjp.full_name} (DPJP)${nurse}`;
+  }
+  return actorsLabel(patient.current_stage);
 }
 
 function WaitingNotice({ role, text }: { role: string; text?: string }) {
@@ -243,8 +347,24 @@ function StageSummary({ patient }: { patient: Patient }) {
 
 function displayValue(f: FieldDef, value: unknown) {
   if (Array.isArray(value)) return value.join(", ");
-  if (f.type === "date") return formatDate(String(value));
+  if (f.type === "date" || f.type === "ctsim") return formatDate(String(value));
   return String(value);
+}
+
+/** "Precise (tersedia)" / "Cobalt (penuh 3 hari)" untuk sisa hari penyinaran pasien ini */
+function machineOptionLabels(hunian: Hunian, patient: Patient, done: number, today: string) {
+  const mulai = workingDayFrom(patient.tgl_verifikasi && patient.tgl_verifikasi > today ? patient.tgl_verifikasi : today);
+  const hari = (patient.total_fraksi ?? 0) - done;
+  const labels: Record<string, string> = {};
+  for (const m of MESIN) {
+    if (m === patient.mesin) {
+      labels[m] = `${m} (rencana dari Poli)`;
+      continue;
+    }
+    const cek = cekKuota(hunian, m, mulai, hari);
+    labels[m] = cek.sisaMin == null ? `${m} (tanpa kuota)` : cek.tersedia ? `${m} (tersedia)` : `${m} (penuh ${cek.hariPenuh} hari)`;
+  }
+  return labels;
 }
 
 function fieldDefaults(patient: Patient, stage: StageKey) {
@@ -253,8 +373,9 @@ function fieldDefaults(patient: Patient, stage: StageKey) {
   for (const f of STAGE_MAP[stage].fields) {
     defaults[f.name] = f.column ? patient[f.column] : saved[f.name];
   }
-  if (stage === "CT_SIM" && !defaults.tanggal_ct) defaults.tanggal_ct = todayISO();
-  if (stage === "VERIFIKASI" && !defaults.tanggal_verifikasi) defaults.tanggal_verifikasi = todayISO();
+  // Tanggal rencana dari Poli; RTT mengubahnya bila pelaksanaannya berbeda
+  if (stage === "CT_SIM" && !defaults.tanggal_ct) defaults.tanggal_ct = patient.tgl_ct_sim ?? todayISO();
+  if (stage === "VERIFIKASI" && !defaults.tanggal_verifikasi) defaults.tanggal_verifikasi = patient.tgl_verifikasi ?? todayISO();
   if (stage === "POLI" && !defaults.diagnosis_kerja) defaults.diagnosis_kerja = patient.diagnosis;
   return defaults;
 }

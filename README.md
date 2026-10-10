@@ -1,4 +1,4 @@
-# Flow Radioterapi
+# Radioterapi RSHS
 
 Website untuk memantau perjalanan pasien radioterapi dari pendaftaran sampai fraksi penyinaran terakhir. Pasien hanya bisa pindah ke tahap berikutnya kalau role yang bertanggung jawab di tahap itu sudah ACC.
 
@@ -9,20 +9,33 @@ Website untuk memantau perjalanan pasien radioterapi dari pendaftaran sampai fra
 | # | Tahap | Penanggung jawab | Bisa dikembalikan ke |
 |---|---|---|---|
 | 1 | Pendaftaran | Administrasi | – |
-| 2 | Poli Radioterapi | Dokter Sp.Onk.Rad | Pendaftaran |
-| 3 | CT Simulator | RTT | Poli |
-| 4 | Delineasi (dosis & jumlah fraksi) | Dokter | CT Simulator |
-| 5 | Planning | Fisikawan Medis | Delineasi |
-| 6 | ACC Planning | Dokter | Planning |
-| 7 | Verifikasi (DRR/CBCT/EPID/QA) | RTT | Planning, CT Simulator |
-| 8 | Penyinaran (dicatat per fraksi) | RTT | – |
-| 9 | Selesai | otomatis setelah fraksi terakhir tercatat | – |
+| 2 | Poli Radioterapi (dosis, jumlah fraksi, rencana pesawat, tanggal CT Sim) | Dokter DPJP atau Perawat | – |
+| 3 | CT Simulator | RTT | – |
+| 4 | Delineasi | Dokter DPJP | CT Simulator |
+| 5 | Planning (ACC plan, boleh mengganti pesawat yang masih ada kuotanya) | Fisikawan Medis | tahap mana pun sebelumnya, paling jauh CT Simulator |
+| 6 | Verifikasi (DRR/CBCT/EPID/QA) | RTT | tahap mana pun sebelumnya, paling jauh CT Simulator |
+| 7 | Penyinaran (absen hadir, lalu dicatat per fraksi) | Administrasi (absen), RTT | tahap mana pun sebelumnya, paling jauh CT Simulator (replanning) |
+| 8 | Selesai | otomatis setelah fraksi terakhir tercatat | – |
 
-Perawat hanya bisa melihat (tidak ada tombol ACC).
+- **Jadwal berdasarkan kuota pesawat**: di Poli, dokter/perawat memilih rencana pesawat dan tanggal CT Sim (H). Verifikasi jatuh di H+14 hari (digeser ke hari kerja bila libur), dan fraksi pertama diberikan di hari yang sama. Delineasi dan Planning harus selesai sebelum tanggal verifikasi. Tanggal CT Sim hanya bisa dipilih kalau **setiap** hari penyinaran pasien (mulai verifikasi, satu fraksi per hari kerja) masih ada kuota di pesawat itu. Aturan ini mutlak dan dicek ulang oleh database.
+- **Kuota harian pesawat**: Synergy 65, Precise 65, Cobalt 30 pasien per hari. Brakiterapi tanpa kuota.
+- **Tugas saya** di dashboard diberi nomor prioritas berdasarkan due date: yang terlambat paling atas, lalu yang paling dekat. Due date: CT Sim = tanggal CT Sim, Delineasi/Planning/Verifikasi = tanggal verifikasi, Penyinaran = setiap hari kerja. Pasien di Poli belum punya due date. Untuk dokter, antrean Poli tampil terpisah di bagian **Poli hari ini** (di atas Tugas saya), sehingga Tugas saya dokter hanya berisi Delineasi.
+- **Dashboard per tanggal**: semua role bisa memilih tanggal dan melihat agenda hari itu: CT Sim, verifikasi & mulai penyinaran, selesai penyinaran, dan jumlah pasien tiap pesawat dibanding kuota.
+- **DPJP** dipilih administrasi saat pendaftaran. Tahap dokter hanya bisa dikerjakan DPJP pasien tersebut, dan untuk sekarang DPJP belum bisa dipindah.
+- **Perawat** bisa ACC di tahap Poli (mengisi field yang sama dengan dokter). Di tahap lain perawat hanya melihat.
+- **ACC Planning** cukup oleh fismed (sudah didiskusikan dengan dokter), lalu pasien langsung ke Verifikasi.
+- **Kembalikan** bisa langsung ke tahap mana pun sebelumnya, paling jauh CT Simulator (CT ulang), termasuk dari Penyinaran untuk replanning (mis. tumor membesar). Pasien tidak pernah dikembalikan ke Poli karena Poli sudah pasti selesai. Fraksi yang sudah diberikan tetap dihitung.
+- **Poli hanya berlaku 1 hari**: kunjungan Poli harus di-ACC (dan dijadwalkan) di hari itu juga. Kalau tidak, kunjungan hangus dan muncul di daftar **Poli hangus** milik administrasi, yang bisa mendaftarkan ulang saat pasien datang lagi.
+- **Due date** juga tampil di samping nama tahap Delineasi dan Planning di halaman pasien.
+- **Mesin**: Synergy, Precise, Cobalt, Brakiterapi. Direncanakan di Poli, bisa diganti fismed di Planning bila kuotanya cukup, menjadi mesin bawaan saat mencatat fraksi, dan boleh diganti untuk satu fraksi saja.
+- **Jadwal fraksi**: setelah fraksi pertama diberikan, halaman pasien menampilkan semua fraksi sampai terakhir: yang sudah disinar, hari tidak hadir, dan jadwal sisa fraksi (1 per hari kerja, melewati Sabtu, Minggu, libur nasional, dan cuti bersama). Jika pasien tidak hadir, sisa jadwal otomatis mundur. Daftar libur ada di `lib/holidays.ts` dan tabel `hari_libur` di database (2026 dan 2027). Keduanya perlu ditambah setiap SKB 3 Menteri tahun berikutnya terbit.
+- **Info Pesawat**: jumlah pasien per hari di Synergy, Precise, dan Cobalt dibanding kuota harian, dengan grafik 20 hari kerja ke depan dan daftar pasien di tanggal yang dipilih. Pasien terhitung sejak ACC Poli, mulai hari verifikasi sampai fraksi terakhir.
+- **Absen penyinaran**: setiap hari administrasi (atau RTT) mencatat pasien hadir / tidak hadir di halaman **Absen Penyinaran**. Fraksi hanya bisa dicatat untuk pasien yang hadir, dengan tanggal otomatis hari ini (WIB). Status boleh diubah dan perubahannya tercatat, kecuali menjadi tidak hadir setelah fraksi hari itu tercatat. Lebih dari satu fraksi per hari diperbolehkan (hiperfraksi).
+- Setiap ACC menampilkan **konfirmasi** agar data diperiksa kembali sebelum pasien dipindahkan.
 
 Aturan alur ada di dua tempat yang harus selalu sama:
-- `lib/workflow.ts`: label, penanggung jawab, isian form tiap tahap, dan tujuan "Kembalikan" (untuk UI)
-- `supabase/migrations/0001_init.sql`: fungsi `stage_owner`, `can_return`, `advance_stage`, `return_stage`, `record_fraction` (aturan yang benar-benar ditegakkan di database)
+- `lib/workflow.ts`: label, penanggung jawab, isian form tiap tahap, daftar mesin, dan tujuan "Kembalikan" (untuk UI)
+- `supabase/migrations/` (dijalankan berurutan): fungsi `stage_owner`, `next_stage`, `can_return`, `can_act`, `advance_stage`, `return_stage`, `record_fraction`, `set_attendance`, `jadwal_sinar`, `hunian_pesawat`, `kuota_penuh_pada` (aturan yang benar-benar ditegakkan di database)
 
 ## Teknologi
 
@@ -40,17 +53,20 @@ npm run dev
 Buka http://localhost:3000 lalu pilih role. Di mode demo:
 - Database Postgres (PGlite) berjalan langsung di laptop dan memakai migration SQL yang sama, jadi aturan ACC per role tetap berlaku.
 - Tidak perlu login. Role dipilih di halaman awal dan bisa diganti kapan saja lewat dropdown **"Lihat sebagai"** di kanan atas tanpa pindah halaman.
-- Data awalnya 10 pasien dummy di berbagai tahap. Tombol **Reset data demo** ada di halaman pilih role (klik **Keluar**) dan mengembalikan data ke kondisi awal.
+- Data awalnya ±350 pasien dummy di berbagai tahap, dibagi ke dua dokter. Jumlahnya dibuat supaya kuota harian ketiga pesawat penuh selama beberapa minggu ke depan, sehingga dokter dan perawat harus mencari tanggal CT Sim yang masih kosong. Termasuk satu pasien replanning ("Wayan Sudarsa") yang dikembalikan dari Penyinaran ke Planning, dan satu kunjungan Poli yang hangus ("Nurhayati") untuk dicoba didaftarkan ulang oleh administrasi. Tombol **Reset data demo** ada di halaman pilih role (klik **Keluar**) dan mengembalikan data ke kondisi awal.
 - Papan **Alur pasien** (kolom per tahap) di dashboard hanya muncul di mode demo, untuk presentasi.
-- Data tersimpan di `node_modules/.cache/demo-db`.
+- Data tersimpan di `node_modules/.cache/demo-db`. Kalau file migration SQL berubah, data demo otomatis dibuat ulang.
 
 Skenario demo singkat:
-1. **Administrasi**: tombol **+ Pasien baru** di dashboard → daftarkan pasien, yang langsung masuk Poli.
-2. **Dokter**: buka pasien → isi form Poli → ACC.
-3. **RTT** → CT Simulator, lalu **Dokter** → Delineasi (isi dosis & jumlah fraksi), lalu **Fismed** → Planning.
-4. **Dokter** di ACC Planning: coba **Kembalikan** ke Planning dengan alasan, lalu Fismed kirim ulang dan Dokter ACC.
-5. **RTT**: verifikasi (DRR/CBCT/EPID/QA), lalu catat fraksi sampai selesai. Untuk melihat penyelesaian dengan cepat, pakai pasien "Slamet Riyadi" (3/5 fraksi).
-6. **Perawat**: semua bisa dilihat, tapi tidak ada tombol aksi.
+1. **Administrasi**: tombol **+ Pasien baru** di dashboard → daftarkan pasien dan pilih dokter DPJP. Pasien langsung masuk Poli.
+2. **Dokter DPJP** (atau **Perawat**): buka pasien di Poli (mis. "Siti Aminah" atau "Suparman") → isi dosis & jumlah fraksi → pilih rencana pesawat → pilih tanggal CT Sim. Tanggal yang dicoret sudah penuh. Kursus pendek (5 fraksi) bisa dapat tanggal lebih awal daripada kursus panjang (25 fraksi) → ACC → periksa lagi tanggal verifikasi di konfirmasi. Dokter lain hanya bisa melihat.
+3. **Dokter**: tab **Daftar Pasien** berisi pasien miliknya, tab **Daftar Pasien Penuh** berisi semua pasien.
+4. **RTT** → CT Simulator, lalu **Dokter** → Delineasi, lalu **Fismed** → Planning (pesawat bisa diganti, dropdown menampilkan pesawat mana yang masih tersedia) → ACC langsung ke Verifikasi. "Tugas saya" tiap role diurutkan dari due date terdekat. Contoh pasien terlambat: "Teguh Prasetyo" (CT Sim) dan "Hendra Wijaya" (Verifikasi).
+5. **Fismed** di Planning: coba **Kembalikan** langsung ke CT Simulator dengan alasan.
+6. **RTT**: verifikasi (DRR/CBCT/EPID/QA).
+7. **Administrasi**: menu **Absen Penyinaran** → tandai pasien hadir / tidak hadir.
+8. **RTT**: menu **Penyinaran Hari Ini** → catat fraksi untuk pasien yang hadir, dikelompokkan per mesin. Untuk melihat penyelesaian dengan cepat, pakai pasien "Slamet Riyadi" (3/5 fraksi). Di halaman pasien yang sedang penyinaran ada **Kembalikan untuk replanning**.
+9. **Semua role**: menu **Info Pesawat** → jumlah pasien per hari di tiap pesawat dibanding kuota harian (Cobalt 30). Klik salah satu hari di grafik untuk melihat daftar pasiennya. Di dashboard, ganti tanggal di bagian **Agenda**.
 
 ## Setup dengan Supabase (untuk pemakaian sebenarnya)
 
@@ -64,9 +80,9 @@ Skenario demo singkat:
    ```bash
    npm install
    npm run db:setup   # menjalankan migration SQL
-   npm run db:seed    # membuat 5 akun demo dan 10 pasien dummy
+   npm run db:seed    # membuat 6 akun demo dan ±350 pasien dummy
    ```
-   Kalau tidak mau memakai `SUPABASE_DB_URL`, buka Supabase → SQL Editor, tempel isi `supabase/migrations/0001_init.sql`, lalu klik Run.
+   Kalau tidak mau memakai `SUPABASE_DB_URL`, buka Supabase → SQL Editor, lalu tempel dan jalankan **semua** file di `supabase/migrations/` secara berurutan (0001, 0002, 0003, 0004).
 4. Jalankan: `npm run dev`, lalu buka http://localhost:3000
 
 ### Akun demo
@@ -74,6 +90,7 @@ Skenario demo singkat:
 | Role | Email |
 |---|---|
 | Dokter Sp.Onk.Rad | dokter@flowrt.test |
+| Dokter Sp.Onk.Rad (kedua) | dokter2@flowrt.test |
 | Perawat | perawat@flowrt.test |
 | RTT | rtt@flowrt.test |
 | Fisikawan Medis | fismed@flowrt.test |
@@ -91,4 +108,4 @@ Tambahkan environment variable `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPAB
 
 - Semua tabel memakai Row Level Security. User yang login hanya bisa membaca, dan tidak bisa insert/update/delete langsung.
 - Setiap perpindahan tahap lewat fungsi Postgres (`security definer`) yang mengecek role user dan tahap pasien saat itu. Tombol yang disembunyikan di UI hanyalah tampilan, aturan sebenarnya ada di database.
-- Setiap ACC dan pengembalian tercatat di `stage_events` (siapa, role, kapan, catatan).
+- Setiap ACC dan pengembalian tercatat di `stage_events` (siapa, role, kapan, catatan). Setiap pencatatan kehadiran tersimpan sebagai baris baru di `attendance`, jadi perubahan tidak menghapus catatan sebelumnya.

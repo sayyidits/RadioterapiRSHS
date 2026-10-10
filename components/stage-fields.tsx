@@ -1,19 +1,35 @@
+import { CtSimPicker } from "@/components/ct-sim-picker";
+import type { Hunian } from "@/lib/booking";
 import { JENIS_KELAMIN, type FieldDef } from "@/lib/workflow";
+
+/** Data untuk field "ctsim": hunian pesawat dan isian form yang sedang diketik */
+export type BookingInput = {
+  hunian: Hunian;
+  today: string;
+  mesin: string;
+  /** Sisa fraksi (jumlah fraksi − fraksi yang sudah diberikan) */
+  jumlahFraksi: number;
+};
 
 /** Render input form dari definisi field di lib/workflow.ts */
 export function StageFields({
   fields,
   defaults = {},
+  optionLabels = {},
+  booking,
 }: {
   fields: FieldDef[];
   defaults?: Record<string, unknown>;
+  /** Label pilihan per field, mis. { mesin: { Synergy: "Synergy (tersedia)" } } */
+  optionLabels?: Record<string, Record<string, string>>;
+  booking?: BookingInput;
 }) {
   return (
     <div className="grid gap-4 sm:grid-cols-2">
       {fields.map((f) => {
         const id = `f_${f.name}`;
         const def = defaults[f.name];
-        const wide = f.type === "textarea" || f.type === "checkboxes";
+        const wide = f.type === "textarea" || f.type === "checkboxes" || f.type === "ctsim";
         return (
           <div key={f.name} className={wide ? "sm:col-span-2" : ""}>
             {f.type === "checkboxes" ? (
@@ -46,7 +62,18 @@ export function StageFields({
                   {f.label}
                   {f.required && <span className="text-rose-600"> *</span>}
                 </label>
-                {f.type === "textarea" ? (
+                {f.type === "ctsim" ? (
+                  booking && (
+                    <CtSimPicker
+                      id={id}
+                      name={f.name}
+                      hunian={booking.hunian}
+                      today={booking.today}
+                      mesin={booking.mesin}
+                      jumlahFraksi={booking.jumlahFraksi}
+                    />
+                  )
+                ) : f.type === "textarea" ? (
                   <textarea
                     id={id}
                     name={f.name}
@@ -69,7 +96,7 @@ export function StageFields({
                     </option>
                     {f.options?.map((opt) => (
                       <option key={opt} value={opt}>
-                        {f.name === "jenis_kelamin" ? JENIS_KELAMIN[opt] : opt}
+                        {f.name === "jenis_kelamin" ? JENIS_KELAMIN[opt] : (optionLabels[f.name]?.[opt] ?? opt)}
                       </option>
                     ))}
                   </select>

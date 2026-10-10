@@ -9,6 +9,11 @@ const ACTION_STYLE = {
   complete: { dot: "bg-emerald-500", tag: "bg-emerald-50 text-emerald-700", text: "Selesai" },
 } as const;
 
+/** Riwayat lama bisa berisi tahap yang sudah dihapus dari alur (ACC_PLAN) */
+function stageLabel(key: string) {
+  return STAGE_MAP[key as keyof typeof STAGE_MAP]?.label ?? (key === "ACC_PLAN" ? "ACC Planning" : key);
+}
+
 export function EventTimeline({ events }: { events: StageEvent[] }) {
   if (events.length === 0) return <p className="text-sm text-slate-500">Belum ada riwayat.</p>;
 
@@ -21,8 +26,8 @@ export function EventTimeline({ events }: { events: StageEvent[] }) {
             <span className={`absolute -left-[26px] top-1 h-3 w-3 rounded-full ring-4 ring-white ${style.dot}`} />
             <p className="text-sm">
               <span className={`mr-1.5 rounded px-1.5 py-0.5 text-[11px] font-semibold ${style.tag}`}>{style.text}</span>
-              {e.from_stage && e.action !== "create" && <>{STAGE_MAP[e.from_stage].label} → </>}
-              <span className="font-medium">{STAGE_MAP[e.to_stage].label}</span>
+              {e.from_stage && e.action !== "create" && <>{stageLabel(e.from_stage)} → </>}
+              <span className="font-medium">{stageLabel(e.to_stage)}</span>
             </p>
             <p className="mt-1 text-xs text-slate-500">
               {e.actor?.full_name ?? "Sistem"}

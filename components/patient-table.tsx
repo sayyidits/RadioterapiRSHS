@@ -1,10 +1,19 @@
 import Link from "next/link";
 import { StageBadge } from "@/components/badges";
-import { age, daysSince } from "@/lib/format";
+import { age, daysSince, formatDate, todayISO } from "@/lib/format";
 import type { Patient } from "@/lib/types";
-import { ROLE_SHORT, STAGE_MAP } from "@/lib/workflow";
+import { STAGE_KEYS, actorsLabel, poliHangus } from "@/lib/workflow";
 
-export function PatientTable({ patients, fractions }: { patients: Patient[]; fractions: Record<string, number> }) {
+export function PatientTable({
+  patients,
+  fractions,
+  showDpjp = true,
+}: {
+  patients: Patient[];
+  fractions: Record<string, number>;
+  showDpjp?: boolean;
+}) {
+  const today = todayISO();
   if (patients.length === 0) {
     return <p className="px-5 py-10 text-center text-sm text-slate-500">Tidak ada pasien.</p>;
   }
@@ -15,15 +24,16 @@ export function PatientTable({ patients, fractions }: { patients: Patient[]; fra
           <tr>
             <th className="px-5 py-2.5 font-medium">Pasien</th>
             <th className="px-3 py-2.5 font-medium">Diagnosis</th>
+            {showDpjp && <th className="px-3 py-2.5 font-medium">DPJP</th>}
             <th className="px-3 py-2.5 font-medium">Status</th>
             <th className="px-3 py-2.5 font-medium">Menunggu</th>
             <th className="px-3 py-2.5 font-medium">Lama di tahap</th>
+            <th className="px-3 py-2.5 font-medium">Verifikasi</th>
             <th className="px-5 py-2.5 font-medium">Fraksi</th>
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
           {patients.map((p) => {
-            const owner = STAGE_MAP[p.current_stage].owner;
             return (
               <tr key={p.id} className="hover:bg-slate-50">
                 <td className="px-5 py-3">
@@ -35,12 +45,17 @@ export function PatientTable({ patients, fractions }: { patients: Patient[]; fra
                   </p>
                 </td>
                 <td className="max-w-xs truncate px-3 py-3 text-slate-600">{p.diagnosis}</td>
+                {showDpjp && <td className="whitespace-nowrap px-3 py-3 text-slate-600">{p.dpjp?.full_name ?? "-"}</td>}
                 <td className="px-3 py-3">
                   <StageBadge stage={p.current_stage} />
+                  {poliHangus(p, today) && <span className="mt-1 block text-xs font-medium text-rose-700">Hangus</span>}
                 </td>
-                <td className="px-3 py-3 text-slate-600">{owner ? ROLE_SHORT[owner] : "-"}</td>
+                <td className="px-3 py-3 text-slate-600">{actorsLabel(p.current_stage)}</td>
                 <td className="whitespace-nowrap px-3 py-3 text-slate-600">
                   {p.current_stage === "SELESAI" ? "-" : daysSince(p.stage_entered_at)}
+                </td>
+                <td className="whitespace-nowrap px-3 py-3 text-slate-600">
+                  <VerificationDate patient={p} today={today} />
                 </td>
                 <td className="whitespace-nowrap px-5 py-3 text-slate-600">
                   {/* Fraksi hanya relevan saat penyinaran berjalan */}
@@ -56,6 +71,26 @@ export function PatientTable({ patients, fractions }: { patients: Patient[]; fra
         </tbody>
       </table>
     </div>
+  );
+}
+
+/**
+ * Tanggal verifikasi (= fraksi 1): rencana dari Poli, atau tanggal sebenarnya bila sudah diverifikasi.
+ * Pasien yang belum di-ACC Poli belum punya jadwal.
+ */
+function VerificationDate({ patient: p, today }: { patient: Patient; today: string }) {
+  const idx = STAGE_KEYS.indexOf(p.current_stage);
+  if (idx <= STAGE_KEYS.indexOf("POLI")) return <>-</>;
+  const done = idx > STAGE_KEYS.indexOf("VERIFIKASI");
+  const actual = p.data.VERIFIKASI?.tanggal_verifikasi;
+  const date = done && typeof actual === "string" ? actual : p.tgl_verifikasi;
+  if (!date) return <>-</>;
+  const late = !done && date < today;
+  return (
+    <span className={late ? "font-medium text-rose-700" : done ? "text-slate-500" : "text-slate-800"}>
+      {formatDate(date)}
+      {late && <span className="block text-xs font-normal">terlambat</span>}
+    </span>
   );
 }
 

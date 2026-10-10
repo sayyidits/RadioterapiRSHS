@@ -1,9 +1,9 @@
 import "server-only";
 import { PGlite, type Transaction } from "@electric-sql/pglite";
+import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { DEMO_USERS, buildDemoPatients } from "../demo-seed";
-import type { Role } from "../workflow";
+import { DEMO_USERS, buildDemoPatients, type DemoKey } from "../demo-seed";
 
 // Mode demo: Postgres (PGlite) berjalan di dalam proses Next.js, memakai
 // migration SQL yang sama dengan Supabase. Data disimpan di node_modules/.cache/demo-db
@@ -28,31 +28,76 @@ const SUPABASE_STUB = `
   grant execute on function auth.uid() to anon, authenticated;
 `;
 
-const globalForDb = globalThis as unknown as { __demoDb?: Promise<PGlite> };
+const globalForDb = globalThis as unknown as { __demoDb?: Promise<PGlite>; __demoDbFingerprint?: string };
 
 export function getDemoDb() {
-  globalForDb.__demoDb ??= open().catch((err) => {
-    globalForDb.__demoDb = undefined; // coba lagi di request berikutnya
-    throw err;
-  });
+  // Saat development migration dicek ulang tiap request, jadi perubahan SQL
+  // langsung terpakai (data demo dibuat ulang) tanpa restart dev server.
+  const recheck = !globalForDb.__demoDb || process.env.NODE_ENV !== "production";
+  const fingerprint = recheck ? migrationsFingerprint() : globalForDb.__demoDbFingerprint!;
+  if (!globalForDb.__demoDb || fingerprint !== globalForDb.__demoDbFingerprint) {
+    const previous = globalForDb.__demoDb;
+    globalForDb.__demoDbFingerprint = fingerprint;
+    globalForDb.__demoDb = Promise.resolve(previous?.then((db) => db.close()).catch(() => {}))
+      .then(() => open(fingerprint))
+      .catch((err) => {
+        globalForDb.__demoDb = undefined; // coba lagi di request berikutnya
+        throw err;
+      });
+  }
   return globalForDb.__demoDb;
 }
 
-async function open() {
-  if (!DATA_DIR.startsWith("memory://")) mkdirSync(DATA_DIR, { recursive: true });
-  const db = new PGlite(DATA_DIR);
+function readMigrations() {
+  const dir = join(process.cwd(), "supabase", "migrations");
+  return readdirSync(dir)
+    .filter((f) => f.endsWith(".sql"))
+    .sort()
+    .map((file) => ({ file, sql: readFileSync(join(dir, file), "utf8") }));
+}
+
+/** Sidik jari isi migration. Kalau berubah, data demo dibuat ulang dari awal. */
+function migrationsFingerprint() {
+  const hash = createHash("sha256");
+  for (const m of readMigrations()) hash.update(m.file).update(m.sql);
+  return hash.digest("hex");
+}
+
+async function open(fingerprint: string) {
+  const persistent = !DATA_DIR.startsWith("memory://");
+  if (persistent) mkdirSync(DATA_DIR, { recursive: true });
+  let db = new PGlite(DATA_DIR);
   await db.waitReady;
+
   const { rows } = await db.query<{ ok: boolean }>("select to_regclass('public.patients') is not null as ok");
-  if (!rows[0].ok) await initialize(db);
+  if (rows[0].ok && (await storedFingerprint(db)) === fingerprint) return db;
+
+  if (rows[0].ok) {
+    // Migration SQL sudah berubah sejak data demo dibuat: buang dan isi ulang
+    await db.close();
+    if (persistent) {
+      rmSync(DATA_DIR, { recursive: true, force: true });
+      mkdirSync(DATA_DIR, { recursive: true });
+    }
+    db = new PGlite(DATA_DIR);
+    await db.waitReady;
+  }
+  await initialize(db, fingerprint);
   return db;
 }
 
-async function initialize(db: PGlite) {
+async function storedFingerprint(db: PGlite) {
+  const { rows } = await db.query<{ ok: boolean }>("select to_regclass('app_private.demo_meta') is not null as ok");
+  if (!rows[0].ok) return null;
+  const meta = await db.query<{ fingerprint: string }>("select fingerprint from app_private.demo_meta limit 1");
+  return meta.rows[0]?.fingerprint ?? null;
+}
+
+async function initialize(db: PGlite, fingerprint: string) {
   await db.exec(SUPABASE_STUB);
-  const dir = join(process.cwd(), "supabase", "migrations");
-  for (const file of readdirSync(dir).filter((f) => f.endsWith(".sql")).sort()) {
-    await db.exec(readFileSync(join(dir, file), "utf8"));
-  }
+  for (const m of readMigrations()) await db.exec(m.sql);
+  await db.exec("create schema if not exists app_private; create table app_private.demo_meta (fingerprint text not null)");
+  await db.query("insert into app_private.demo_meta (fingerprint) values ($1)", [fingerprint]);
 
   for (const u of DEMO_USERS) {
     await db.query("insert into auth.users (id, email, raw_user_meta_data) values ($1, $2, $3::jsonb)", [
@@ -62,24 +107,42 @@ async function initialize(db: PGlite) {
     ]);
   }
 
-  const ids = Object.fromEntries(DEMO_USERS.map((u) => [u.role, u.id])) as Record<Role, string>;
+  const ids = Object.fromEntries(DEMO_USERS.map((u) => [u.key, u.id])) as Record<DemoKey, string>;
+  const rows = { patients: [], stage_events: [], fractions: [], attendance: [] } as Record<string, Record<string, unknown>[]>;
   for (const rec of buildDemoPatients(ids)) {
-    const { rows } = await insert<{ id: string }>(db, "patients", rec.patient, "id");
-    for (const e of rec.events) await insert(db, "stage_events", { ...e, patient_id: rows[0].id });
-    for (const f of rec.fractions) await insert(db, "fractions", { ...f, patient_id: rows[0].id });
+    const id = randomUUID();
+    rows.patients.push({ id, ...rec.patient });
+    for (const e of rec.events) rows.stage_events.push({ ...e, patient_id: id });
+    for (const f of rec.fractions) rows.fractions.push({ ...f, patient_id: id });
+    for (const a of rec.attendance) rows.attendance.push({ ...a, patient_id: id });
   }
+  // Ratusan pasien dan ribuan fraksi: insert banyak baris sekaligus
+  for (const [table, list] of Object.entries(rows)) await insertMany(db, table, list);
 }
 
-function insert<T>(db: PGlite, table: string, row: Record<string, unknown>, returning?: string) {
-  const cols = Object.keys(row);
-  const values = cols.map((c) => {
-    const v = row[c];
-    return v !== null && typeof v === "object" ? JSON.stringify(v) : v;
-  });
-  const sql = `insert into public.${table} (${cols.join(", ")}) values (${cols.map((_, i) => `$${i + 1}`).join(", ")})${
-    returning ? ` returning ${returning}` : ""
-  }`;
-  return db.query<T>(sql, values);
+/** Insert per kelompok baris dengan kolom yang sama, maksimal 500 baris per query. */
+async function insertMany(db: PGlite, table: string, rows: Record<string, unknown>[]) {
+  const groups = new Map<string, Record<string, unknown>[]>();
+  for (const row of rows) {
+    const key = Object.keys(row).join(",");
+    groups.set(key, [...(groups.get(key) ?? []), row]);
+  }
+  for (const [key, list] of groups) {
+    const cols = key.split(",");
+    for (let i = 0; i < list.length; i += 500) {
+      const chunk = list.slice(i, i + 500);
+      const values: unknown[] = [];
+      const tuples = chunk.map((row) => {
+        const start = values.length;
+        for (const c of cols) {
+          const v = row[c];
+          values.push(v !== null && typeof v === "object" ? JSON.stringify(v) : v);
+        }
+        return `(${cols.map((_, j) => `$${start + j + 1}`).join(", ")})`;
+      });
+      await db.query(`insert into public.${table} (${cols.join(", ")}) values ${tuples.join(", ")}`, values);
+    }
+  }
 }
 
 /** Jalankan query sebagai user tertentu (role authenticated + auth.uid()), seperti di Supabase. */

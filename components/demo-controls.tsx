@@ -27,7 +27,8 @@ export function RoleSwitcher({ users, currentId }: { users: DemoUser[]; currentI
       >
         {users.map((u) => (
           <option key={u.id} value={u.id}>
-            {ROLES[u.role]}
+            {/* Role yang punya lebih dari satu akun (dokter) dibedakan dengan nama */}
+            {users.filter((x) => x.role === u.role).length > 1 ? `${ROLES[u.role]} · ${u.full_name.split(",")[0]}` : ROLES[u.role]}
           </option>
         ))}
       </select>

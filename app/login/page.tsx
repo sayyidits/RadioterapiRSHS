@@ -1,8 +1,8 @@
 import { ResetDemoButton } from "@/components/demo-controls";
-import { Logo } from "@/components/logo";
+import { Logo, LogoLengkap } from "@/components/logo";
 import { DEMO_USERS } from "@/lib/demo-seed";
 import { IS_DEMO } from "@/lib/mode";
-import { ROLES, ROLE_SHORT, STAGES, stagesOwnedBy, STAGE_MAP } from "@/lib/workflow";
+import { ROLES, STAGES, actorsLabel, stagesOwnedBy, STAGE_MAP } from "@/lib/workflow";
 import { demoSignIn } from "./actions";
 import { LoginForm } from "./login-form";
 
@@ -11,8 +11,11 @@ export default function LoginPage() {
     <main className="grid min-h-screen lg:grid-cols-2">
       <section className="hidden flex-col justify-between bg-teal-800 p-10 text-teal-50 lg:flex">
         <div className="flex items-center gap-3">
-          <Logo className="h-9 w-9" />
-          <span className="text-lg font-semibold text-white">Flow Radioterapi</span>
+          {/* Latar putih supaya logo tetap terbaca di panel teal */}
+          <span className="grid h-11 w-11 place-items-center rounded-xl bg-white">
+            <Logo className="h-8 w-8" />
+          </span>
+          <span className="text-lg font-semibold text-white">Radioterapi RSHS</span>
         </div>
         <div>
           <h2 className="text-3xl font-semibold leading-tight text-white">
@@ -25,7 +28,7 @@ export default function LoginPage() {
                   {i + 1}
                 </span>
                 {s.label}
-                {s.owner && <span className="text-teal-300">· {ROLE_SHORT[s.owner]}</span>}
+                {s.owner && <span className="text-teal-300">· {actorsLabel(s.key)}</span>}
               </li>
             ))}
           </ol>
@@ -34,9 +37,9 @@ export default function LoginPage() {
       </section>
       <section className="flex items-center justify-center px-4 py-12">
         <div className={`w-full ${IS_DEMO ? "max-w-md" : "max-w-sm"}`}>
-          <div className="mb-8 flex items-center gap-3 lg:hidden">
-            <Logo />
-            <span className="text-lg font-semibold">Flow Radioterapi</span>
+          <div className="mb-8">
+            <LogoLengkap className="h-12 w-auto" />
+            <p className="mt-3 text-lg font-semibold lg:hidden">Radioterapi RSHS</p>
           </div>
           {IS_DEMO ? <DemoRolePicker /> : <PasswordLogin />}
         </div>

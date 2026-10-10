@@ -1,10 +1,10 @@
-// Membuat 5 akun demo (1 per role) dan pasien dummy di Supabase.
+// Membuat 6 akun demo (1 per role + dokter kedua) dan pasien dummy di Supabase.
 // Pakai: npm run db:seed   (butuh NEXT_PUBLIC_SUPABASE_URL, SUPABASE_SERVICE_ROLE_KEY, DEMO_PASSWORD di .env.local)
 // Semua data di sini fiktif (lihat lib/demo-seed.ts).
+import { randomUUID } from "node:crypto";
 import { createClient } from "@supabase/supabase-js";
 import { config } from "dotenv";
-import { DEMO_USERS, buildDemoPatients } from "../lib/demo-seed";
-import type { Role } from "../lib/workflow";
+import { DEMO_USERS, buildDemoPatients, type DemoKey } from "../lib/demo-seed";
 
 config({ path: ".env.local" });
 
@@ -21,11 +21,11 @@ const admin = createClient(url, serviceKey, { auth: { persistSession: false, aut
 async function ensureUsers() {
   const { data, error } = await admin.auth.admin.listUsers({ perPage: 1000 });
   if (error) throw error;
-  const ids: Partial<Record<Role, string>> = {};
+  const ids: Partial<Record<DemoKey, string>> = {};
   for (const u of DEMO_USERS) {
     const existing = data.users.find((x) => x.email === u.email);
     if (existing) {
-      ids[u.role] = existing.id;
+      ids[u.key] = existing.id;
       console.log(`✓ akun ${u.email} sudah ada`);
       continue;
     }
@@ -36,30 +36,39 @@ async function ensureUsers() {
       user_metadata: { full_name: u.full_name, role: u.role },
     });
     if (err) throw err;
-    ids[u.role] = created.user.id;
+    ids[u.key] = created.user.id;
     console.log(`+ akun ${u.email} (${u.role}) dibuat`);
   }
-  return ids as Record<Role, string>;
+  return ids as Record<DemoKey, string>;
 }
 
-async function seedPatients(ids: Record<Role, string>) {
+async function seedPatients(ids: Record<DemoKey, string>) {
   const { count } = await admin.from("patients").select("id", { count: "exact", head: true });
   if (count && count > 0) {
     console.log(`✓ tabel pasien sudah berisi ${count} data, seed pasien dilewati`);
     return;
   }
 
+  // Ratusan pasien pengisi kuota: id dibuat di sini lalu semua tabel di-insert per kelompok
+  const rows: Record<"patients" | "stage_events" | "fractions" | "attendance", Record<string, unknown>[]> = {
+    patients: [],
+    stage_events: [],
+    fractions: [],
+    attendance: [],
+  };
   for (const rec of buildDemoPatients(ids)) {
-    const { data: row, error } = await admin.from("patients").insert(rec.patient).select("id").single();
-    if (error) throw error;
-
-    const { error: evErr } = await admin.from("stage_events").insert(rec.events.map((e) => ({ ...e, patient_id: row.id })));
-    if (evErr) throw evErr;
-    if (rec.fractions.length) {
-      const { error: fxErr } = await admin.from("fractions").insert(rec.fractions.map((f) => ({ ...f, patient_id: row.id })));
-      if (fxErr) throw fxErr;
+    const id = randomUUID();
+    rows.patients.push({ id, ...rec.patient });
+    rows.stage_events.push(...rec.events.map((e) => ({ ...e, patient_id: id })));
+    rows.fractions.push(...rec.fractions.map((f) => ({ ...f, patient_id: id })));
+    rows.attendance.push(...rec.attendance.map((a) => ({ ...a, patient_id: id })));
+  }
+  for (const [table, list] of Object.entries(rows)) {
+    for (let i = 0; i < list.length; i += 500) {
+      const { error } = await admin.from(table).insert(list.slice(i, i + 500));
+      if (error) throw error;
     }
-    console.log(`+ pasien ${rec.patient.nama} (${rec.patient.current_stage})`);
+    console.log(`+ ${list.length} baris ${table}`);
   }
 }
 
