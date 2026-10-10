@@ -2,11 +2,22 @@ import { ResetDemoButton } from "@/components/demo-controls";
 import { Logo, LogoLengkap } from "@/components/logo";
 import { DEMO_USERS } from "@/lib/demo-seed";
 import { IS_DEMO } from "@/lib/mode";
-import { ROLES, STAGES, actorsLabel, stagesOwnedBy, STAGE_MAP } from "@/lib/workflow";
+import { AKSES, ROLES, STAGES, actorsLabel, stagesOwnedBy, STAGE_MAP } from "@/lib/workflow";
 import { demoSignIn } from "./actions";
 import { LoginForm } from "./login-form";
 
-export default function LoginPage() {
+/** Pesan dari ?error= (callback Google/email, profil) dan ?sesi=habis (mode demo) */
+const PESAN: Record<string, string> = {
+  masuk: "Gagal masuk. Login dibatalkan atau tautan sudah kedaluwarsa, silakan coba lagi.",
+  google: "Tidak dapat terhubung ke Google. Silakan coba lagi.",
+  profil: "Akun ini belum memiliki profil. Silakan keluar lalu masuk lagi, atau hubungi Admin.",
+  habis: "Sesi berakhir, silakan pilih akun lagi.",
+};
+
+export default async function LoginPage({ searchParams }: PageProps<"/login">) {
+  const sp = await searchParams;
+  const kode = typeof sp.error === "string" ? sp.error : typeof sp.sesi === "string" ? sp.sesi : "";
+  const pesan = PESAN[kode];
   return (
     <main className="grid min-h-screen lg:grid-cols-2">
       <section className="hidden flex-col justify-between bg-teal-800 p-10 text-teal-50 lg:flex">
@@ -41,6 +52,11 @@ export default function LoginPage() {
             <LogoLengkap className="h-12 w-auto" />
             <p className="mt-3 text-lg font-semibold lg:hidden">Radioterapi RSHS</p>
           </div>
+          {pesan && (
+            <p role="alert" className="mb-5 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 ring-1 ring-inset ring-rose-200">
+              {pesan}
+            </p>
+          )}
           {IS_DEMO ? <DemoRolePicker /> : <PasswordLogin />}
         </div>
       </section>
@@ -51,8 +67,10 @@ export default function LoginPage() {
 function PasswordLogin() {
   return (
     <>
-      <h1 className="text-2xl font-semibold">Masuk</h1>
-      <p className="mb-6 mt-1 text-sm text-slate-500">Gunakan akun yang diberikan oleh administrator.</p>
+      <h1 className="text-2xl font-semibold">Selamat datang</h1>
+      <p className="mb-6 mt-1 text-sm text-slate-500">
+        Masuk dengan akun Google atau email. Akun baru dapat digunakan setelah disetujui Admin atau Master.
+      </p>
       <LoginForm />
     </>
   );
@@ -79,10 +97,15 @@ function DemoRolePicker() {
                 className="card flex w-full items-center justify-between gap-3 p-4 text-left transition hover:border-teal-400 hover:bg-teal-50/40"
               >
                 <div>
-                  <p className="font-semibold">{ROLES[u.role]}</p>
+                  <p className="font-semibold">
+                    {ROLES[u.role]}
+                    {u.akses && <span className="ml-2 text-xs font-medium text-violet-700">+ {AKSES[u.akses]}</span>}
+                  </p>
                   <p className="text-sm text-slate-600">{u.full_name}</p>
                   <p className="mt-1 text-xs text-slate-500">
                     {stages.length ? `ACC: ${stages.join(", ")}` : "Hanya melihat"}
+                    {u.akses === "master" && " · mengelola semua akun"}
+                    {u.akses === "admin" && " · mengelola akun Nakes"}
                   </p>
                 </div>
                 <span className="text-teal-700" aria-hidden="true">→</span>

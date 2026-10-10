@@ -32,6 +32,38 @@ The UI, code comments, and commit messages are in Indonesian. Match that when ed
 - **Replanning**: sending a patient back from Penyinaran (e.g. the tumor grew) to redo planning, or at most a new CT Sim ("CT ulang"). Fractions already given stay counted.
 - **H / H+14**: H is the CT Sim date. Verifikasi is H+14 calendar days (moved to the next working day if that is a weekend or holiday), and fraction 1 is given on the same day as verifikasi.
 - **Kuota pesawat**: patients per machine **per working day**: Synergy 65, Precise 65, Cobalt 30, Brakiterapi none.
+- **Kuota CT Sim**: at most 7 patients per CT Sim date, across all machines (including Brakiterapi).
+
+## Accounts (self sign-up, approval, access levels)
+
+Every account has two separate things:
+- **Role kerja** (`profiles.role`, `Role` in TS): dokter, perawat, rtt, fismed, administrasi. Decides which stages it can ACC.
+- **Hak akses** (`profiles.akses`, `akses_akun` enum, 0009; `AKSES` in `lib/workflow.ts`): **master > admin > nakes**. Decides who manages accounts. Nakes manage nothing. Admin approves/rejects sign-ups and changes role, deactivates, or reactivates **Nakes** accounts only, and cannot grant Admin/Master. Master manages every account, including granting and removing Admin/Master. Nobody can change their own status or access level (only their own role kerja), so nobody locks themselves out. The user set this hierarchy on 2026-10-10; that Admins cannot manage other Admins is my reading of it, so confirm before relying on it.
+
+Anyone can create an account (Google or email + password on `/login`, Supabase mode only). The
+`profiles.status` (`status_akun` enum, 0008) gates everything:
+- `baru`: just signed up, no role. `getCurrentUser()` sends them to `/daftar` to enter their full name with title and pick a role kerja (`lengkapi_profil` RPC).
+- `menunggu`: waiting for an Admin/Master. `/menunggu` shows the request and they can still edit it.
+- `aktif`: approved. Only active accounts have a role in `current_user_role()` (so every RPC rejects the rest) and pass RLS on patients, stage_events, fractions, and attendance (`akun_aktif()`). Non-active accounts can read only their own profile.
+- `ditolak` / `nonaktif`: blocked, shown on `/menunggu`.
+- An active account with no role kerja (a Master converted from the old 0007 `master` role) is sent to `/daftar`, and `lengkapi_profil` lets it pick one while staying active.
+
+Accounts are managed on `/akun` via `atur_akun(p_user, p_status, p_role, p_akses)`. `hakAtas()` in
+`lib/workflow.ts` mirrors its rules to decide which controls each row shows. The `master` value of
+the `user_role` enum (0007) is obsolete, like `ACC_PLAN`: Postgres cannot drop it, and every RPC
+rejects it. The first Master is set with `npm run akun:master -- email` (direct SQL through
+`SUPABASE_DB_URL`, sets `akses` only and keeps the role kerja) after that person signs up once.
+
+Roles and access are never read from `user_metadata` (users can set it themselves at sign-up).
+`handle_new_user()` makes an account active immediately only when `app_metadata.role` is set
+(optionally with `app_metadata.akses`), which needs the service role (`db:seed`, demo mode).
+`listDoctors()` (DPJP choices) returns active doctors only.
+
+`lib/auth.ts`: `getSessionProfile()` returns the logged-in account whatever its status (used by
+`/daftar` and `/menunggu`, outside the `(app)` layout). `getCurrentUser()` returns active users
+with a role kerja (`CurrentUser`: role + akses) and redirects the rest. Google and
+email-confirmation links come back to `app/auth/callback/route.ts` (code exchange), which is a
+public path in `lib/supabase/proxy.ts`.
 
 ## Workflow (the core rule set)
 
@@ -76,14 +108,18 @@ booked without regard for treatment capacity, so patients piled up at Penyinaran
 ACC, the doctor or nurse picks a planned machine and a CT Sim date (H). That fixes
 `patients.tgl_ct_sim` and `patients.tgl_verifikasi` (= H+14, see glossary). A patient occupies
 one slot per working day on their machine, from `tgl_verifikasi` for (total − given) fractions.
-A CT Sim date can be picked only if **every** one of those days still has quota. This is
-absolute: `advance_stage` re-checks it (`kuota_penuh_pada`, behind a per-machine advisory lock),
-so a stale UI cannot overbook. Fismed can change the machine at PLANNING only to one with quota
+A CT Sim date can be picked only if **every** one of those days still has quota, **and** the CT
+Simulator itself has fewer than 7 patients booked that day (`KUOTA_CT_SIM`, one CT Simulator for
+all machines; counts patients past POLI with that `tgl_ct_sim`, via `jumlah_ct_sim()`). This is
+absolute: `advance_stage` re-checks both (CT Sim count behind a `kuota:ct_sim` advisory lock,
+then `kuota_penuh_pada` behind a per-machine lock, always in that order), so a stale UI cannot
+overbook. A CT ulang return does not book a new CT Sim slot. Fismed can change the machine at PLANNING only to one with quota
 on the patient's days. Recording fractions is never blocked by quota.
 Occupancy is defined once, in SQL `jadwal_sinar(from, to, exclude)`:
 - Fractions already given count on their real dates.
 - Patients in CT_SIM–VERIFIKASI are projected from `tgl_verifikasi`, or from today if that date has passed.
 - Patients in PENYINARAN are projected from today, with the same rule as `buildSchedule`.
+- Anyone who already received a fraction today (also when returned for replanning the same day) is projected from the next working day (0005), so they are never counted twice on one day.
 - Patients at POLI hold no slots.
 - Returning (to CT_SIM at most) keeps the booking. Projection restarts from today once `tgl_verifikasi` has passed.
 
@@ -131,8 +167,8 @@ happened, with no projection.
 
 **These rules live in two places that must stay in sync:**
 - `lib/workflow.ts`: labels, `owner` + `alsoBy` per stage (`stageActors()`, `canActOn()` with the DPJP check), form fields per stage (`FieldDef[]`), return targets, `MESIN`, `KUOTA_PESAWAT`, `JEDA_CT_VERIFIKASI`, `dueDate()`. Drives the whole UI. Forms are generated from field definitions, so there is no per-stage form component (the `ctsim` field type renders the CT Sim date picker). `lib/booking.ts` and `lib/holidays.ts` mirror the SQL scheduling rules for display.
-- `supabase/migrations/`, applied in order, later files replacing functions from earlier ones. `0001_init.sql`: schema, RLS, first versions of the RPCs. `0002_dpjp_mesin_absensi.sql`: DPJP, `can_act()` (DPJP + perawat rule), `is_valid_mesin()`, `today_wib()`, the `attendance` table, `set_attendance`, and new signatures for `create_patient`/`record_fraction`. `0003_alur_ringkas.sql`: current `stage_owner()`, `next_stage()` (enum order, skipping `ACC_PLAN`), `can_return()` (any earlier stage, by enum order). `0004_jadwal_kuota.sql`: `hari_libur`, `is_working_day()`, `working_days()`, `tgl_verifikasi_dari()`, `kuota_pesawat()`, `patients.tgl_ct_sim`/`tgl_verifikasi`, `jadwal_sinar()`, `hunian_pesawat()`, `kuota_penuh_pada()`, the current `can_return()` (down to CT_SIM), `poli_hangus()`, `daftar_ulang_poli`, and the current `advance_stage`. **This is the actual enforcement.** Hiding a button in the UI is cosmetic.
-  To read the live version of a function, find the latest file that defines it (`grep -n "function public.<name>" supabase/migrations/*.sql`, last hit wins). As of 0004: `return_stage`, `create_patient`, `record_fraction`, and `set_attendance` are last defined in 0002, `stage_owner` and `next_stage` in 0003, and `advance_stage` and `can_return` in 0004.
+- `supabase/migrations/`, applied in order, later files replacing functions from earlier ones. `0001_init.sql`: schema, RLS, first versions of the RPCs. `0002_dpjp_mesin_absensi.sql`: DPJP, `can_act()` (DPJP + perawat rule), `is_valid_mesin()`, `today_wib()`, the `attendance` table, `set_attendance`, and new signatures for `create_patient`/`record_fraction`. `0003_alur_ringkas.sql`: current `stage_owner()`, `next_stage()` (enum order, skipping `ACC_PLAN`), `can_return()` (any earlier stage, by enum order). `0004_jadwal_kuota.sql`: `hari_libur`, `is_working_day()`, `working_days()`, `tgl_verifikasi_dari()`, `kuota_pesawat()`, `patients.tgl_ct_sim`/`tgl_verifikasi`, `jadwal_sinar()`, `hunian_pesawat()`, `kuota_penuh_pada()`, the current `can_return()` (down to CT_SIM), `poli_hangus()`, `daftar_ulang_poli`, and the current `advance_stage`. `0005_jadwal_fraksi_hari_ini.sql`: current `jadwal_sinar()` (fixes the same-day replanning double count). `0006_kuota_ct_sim.sql`: `kuota_ct_sim()`, `jumlah_ct_sim()`, and the current `advance_stage` (adds the CT Sim quota check at POLI). `0007_role_master.sql`: the `master` role value (obsolete since 0009). `0008_akun_mandiri.sql`: `status_akun`, `profiles.email`/`status`, the current `current_user_role()`, `akun_aktif()`, the RLS policies. `0009_hak_akses.sql`: `akses_akun`, `profiles.akses`, `akses_saya()`, and the current `handle_new_user()`, `lengkapi_profil`, and `atur_akun`. **This is the actual enforcement.** Hiding a button in the UI is cosmetic.
+  To read the live version of a function, find the latest file that defines it (`grep -n "function public.<name>" supabase/migrations/*.sql`, last hit wins). As of 0009: `return_stage`, `create_patient`, `record_fraction`, and `set_attendance` are last defined in 0002, `stage_owner` and `next_stage` in 0003, `can_return` in 0004, `jadwal_sinar` in 0005, `advance_stage` in 0006, `current_user_role` in 0008, and `handle_new_user`, `lengkapi_profil`, and `atur_akun` in 0009.
 
 Stage-specific SQL logic in `advance_stage`: `PENDAFTARAN` updates identity columns from the
 payload. `POLI` writes `dosis_total_gy`/`total_fraksi` (required, > 0, not below fractions
@@ -162,7 +198,8 @@ npm run lint         # eslint
 npm run typecheck    # next typegen && tsc --noEmit (PageProps/LayoutProps types come from typegen)
 
 npm run db:setup     # apply supabase/migrations/*.sql to SUPABASE_DB_URL (tracked in app_private.migrations)
-npm run db:seed      # create 6 demo accounts + ~350 dummy patients in Supabase (needs service role key)
+npm run db:seed      # create 6 demo accounts + ~350 dummy patients in Supabase (needs service role key; not for the real database)
+npm run akun:master -- email  # give a signed-up account Master access (the first Master), via SUPABASE_DB_URL
 ```
 
 The `db:*` scripts read `.env.local` (template in `.env.example`). `db:setup` uses
@@ -180,7 +217,15 @@ beyond total, and so on. For 0004 it also covered POLI without machine/date, CT 
 past, on weekends, or on holidays, a full day (fill Cobalt to 30), a full day in the middle of a
 course, switching to a full machine at PLANNING, slot release on return to POLI, Brakiterapi
 without quota, `hari_libur` matching `HARI_LIBUR`, and `jadwal_sinar` matching `buildSchedule`
-for every seeded PENYINARAN patient. A script that imports TS from the project and lives
+for every seeded PENYINARAN patient. For 0005: record a fraction then return to PLANNING on the
+same day (2 rows that day under 0004, 1 under 0005), and every other patient's `jadwal_sinar`
+rows unchanged. For 0006: POLI patients hold no CT slot, ACC up to 7 on one date (Brakiterapi, to
+isolate the CT check) then the 8th is rejected and stays at POLI, `exclude` skips the patient
+itself, `ctSimOptions` agrees with `jumlah_ct_sim`, and no seeded CT Sim date exceeds 7.
+For 0008: a Google sign-up that puts `role: dokter` in its own `user_metadata` stays `baru` with no role and cannot read patients, events, fractions, attendance, `jadwal_sinar`, or call any RPC until a Master approves it. It cannot pick `master` or approve itself, a non-Master cannot approve, deactivation removes access again, and accounts created before 0008 stay active. For 0009: an old `master`-role account becomes akses master with no role kerja and can pick one while staying active; Admin approves and edits Nakes but cannot grant Admin, touch Admin or Master accounts, or change its own status or access; Master can promote, demote, and edit other Masters but not itself; a demoted Admin loses account management at once. Patients created with `create_patient` get the real `now()`, so set their `stage_entered_at` to
+the mocked day or POLI counts as hangus. Most bugs here only show on a working day, so when today is a weekend, override
+`today_wib()` after the migrations and pass the same date as `now` to `buildDemoPatients(ids, now)`.
+A script that imports TS from the project and lives
 outside it runs with `npx tsx file.mts`, using `file:///` URLs for project imports (including
 `node_modules/@electric-sql/pglite/dist/index.js`). To test a data migration (like 0003 moving `ACC_PLAN` patients), apply
 the earlier files, insert the old-state rows, then apply the new file. If you change the SQL,
@@ -199,20 +244,20 @@ the preview tools. Reuse it instead of starting a second `next dev`.
 - Queries run through `asUser(uid, fn)`: a transaction with `set_config('request.jwt.claim.sub', uid)` + `set local role authenticated`, so RLS and the RPC role checks behave exactly as in production.
 - Data dir: `node_modules/.cache/demo-db`. Keep it out of the project root, or Turbopack watches it and reloads endlessly. On Vercel it falls back to `memory://`, which is not suitable for shared use: each instance holds its own copy and resets on cold start.
 - `lib/demo-seed.ts` places past fractions on working days only, counted back from yesterday, so the projected schedule starts cleanly today. All dates follow the H / H+14 rules.
-- Besides the ~18 named patients (6 at POLI for the doctors/nurse to book, plus late examples like Teguh at CT Sim and Hendra at Verifikasi, Wayan returned from Penyinaran to PLANNING today for replanning, and Nurhayati, whose Poli visit from yesterday is hangus; every other POLI patient is registered today), `fillerSpecs()` generates ~330 filler patients with a fixed-seed PRNG. They make occupancy **exactly** equal the quota on the working-day ranges in `FULL` (today through about 4 weeks, with a gap so short courses fit earlier than long ones). Day 0 is filled with PENYINARAN patients, and later days with patients whose verifikasi falls on that day (stage derived from their CT Sim date). Changing `FULL`, `COURSES`, or the named patients changes the whole picture, so check occupancy afterwards (Info Pesawat, or `hunian_pesawat()` in PGlite).
+- Besides the ~18 named patients (6 at POLI for the doctors/nurse to book, plus late examples like Teguh at CT Sim and Hendra at Verifikasi, Wayan returned from Penyinaran to PLANNING today for replanning, and Nurhayati, whose Poli visit from yesterday is hangus; every other POLI patient is registered today), `fillerSpecs()` generates ~330 filler patients with a fixed-seed PRNG. They fill occupancy up to the quota on the working-day ranges in `FULL` (today through about 4 weeks, with a gap so short courses fit earlier than long ones). Day 0 is filled with PENYINARAN patients, and later days with patients whose verifikasi falls on that day (stage derived from their CT Sim date). No CT Sim date gets more than `KUOTA_CT_SIM` patients (past dates included), so days whose CT Sim date is full are filled later and the machines sit at roughly 80–100% instead of exactly full. Days are filled for all three machines in turn so the CT Sim slots are shared fairly. Changing `FULL`, `COURSES`, or the named patients changes the whole picture, so check occupancy afterwards (Info Pesawat, or `hunian_pesawat()` in PGlite).
 - Seeding inserts multi-row batches (`insertMany` in `lib/demo/db.ts`, 500-row chunks in `scripts/seed.ts`), because the seed has thousands of fraction/attendance rows.
 - "Reset data demo" asks for a browser `confirm()`. An automated browser dismisses it, so the reset silently does nothing. Ask the user to click it.
-- No login: the `demo_uid` cookie holds one of the fixed `DEMO_USERS` ids (two doctors, `dokter` and `dokter2`, so the DPJP split is visible, and one account for each other role). Seed code addresses accounts by `DemoKey`, not by role. You pick an account on `/login`, and a "Lihat sebagai" dropdown in the header switches account while staying on the same page. "Reset data demo" is on the `/login` role-picker page, which `proxy.ts` only shows when no account is selected.
+- No login: the `demo_uid` cookie holds one of the fixed `DEMO_USERS` ids (two doctors, `dokter` and `dokter2`, so the DPJP split is visible, and one account for each other role). dr. Andi (`dokter`) also has Master access and Dewi Lestari (`administrasi`) Admin access. `DEMO_PENDAFTAR` adds sign-ups waiting for approval (not selectable as a demo account). There is no Google login, `/daftar`, or `/menunggu` flow in demo mode. Seed code addresses accounts by `DemoKey`, not by role. You pick an account on `/login`, and a "Lihat sebagai" dropdown in the header switches account while staying on the same page. "Reset data demo" is on the `/login` role-picker page, which `proxy.ts` only shows when no account is selected.
 - `getDemoDb()` caches the open promise on `globalThis`, and a failed open clears it. If you ever see the same init error repeating, restart the dev server.
 
-**Supabase mode** (current production path, likely to be replaced, see below): `@supabase/ssr`
-cookie sessions refreshed in `proxy.ts` → `lib/supabase/proxy.ts`, email/password login,
-roles stored in `profiles` (created by a trigger from `user_metadata` at user creation).
+**Supabase mode** (the production path, see Deployment): `@supabase/ssr` cookie sessions
+refreshed in `proxy.ts` → `lib/supabase/proxy.ts`, Google + email/password login and sign-up
+(`app/login/actions.ts`), roles and approval status in `profiles` (see Accounts).
 
 Every data access goes through a mode-agnostic layer, so pages and actions never touch a
 backend directly:
-- `lib/auth.ts`: `getCurrentUser()` (React `cache`, redirects to `/login`)
-- `lib/data.ts`: `listPatients` (optional `dpjp` filter), `getPatient`, `getPatientStage`, `fractionCounts`, `listDoctors`, `attendanceToday`, `fractionsToday`, `attendanceDays`, `jadwalSinar`, `hunianPesawat` (both call the SQL functions, via `supabase.rpc` in Supabase mode). Demo queries use `selectJson` (`row_to_json`) so dates and numbers come back in the same JSON shape as PostgREST, including the embedded `dpjp: { full_name }` (`profiles!patients_dpjp_id_fkey` in Supabase, a subquery in demo).
+- `lib/auth.ts`: `getSessionProfile()` and `getCurrentUser()` (React `cache`, see Accounts)
+- `lib/data.ts`: `listPatients` (optional `dpjp` filter), `getPatient`, `getPatientStage`, `fractionCounts` (optional `tanggal`, e.g. today's fractions), `listDoctors`, `listAccounts`, `attendanceToday`, `attendanceDays`, `jadwalSinar`, `hunianPesawat`, `jumlahCtSim` (these three call the SQL functions, via `supabase.rpc` in Supabase mode). Supabase silently caps responses at 1000 rows, so list queries go through `fetchAll` (paged with `.range()`, needs a stable order down to a unique column). Demo queries use `selectJson` (`row_to_json`) so dates and numbers come back in the same JSON shape as PostgREST, including the embedded `dpjp: { full_name }` (`profiles!patients_dpjp_id_fkey` in Supabase, a subquery in demo).
 - `lib/rpc.ts`: `rpc(name, args)` calls the Postgres functions with named arguments. Raised exception messages are user-facing Indonesian text and are shown as-is in forms.
 
 ## UI rules decided with the user
@@ -221,12 +266,13 @@ backend directly:
 - The primary action is a **"+ Pasien baru" button** (`components/add-patient-button.tsx`, top-right of the dashboard and the patient list, administrasi only) instead of relying on the header nav link, because the user found people miss the link at the top. Keep it in production. Style: the standard teal `btn btn-primary` at normal size. The user tried a larger emerald "Tambah pasien" variant and preferred this one.
 - Patient list (`components/patient-table.tsx`): the stage column is labeled **"Status"**, and so is the list filter. The **Fraksi** column only shows a value while the patient is in `PENYINARAN` (to avoid distraction) and renders `done/total` with a pastel light-blue (`bg-sky-300`) progress bar under it. Every other status shows "-".
 - Registration form fields: No. RM, nama, tanggal lahir, jenis kelamin (L/P), no HP, diagnosis rujukan, and a required **Dokter DPJP** select.
+- Login page (Supabase mode): "Masuk dengan Google" button, then Masuk / "Daftar akun baru" tabs for email. `?error=` codes from the callback are shown as Indonesian messages. Admin and Master get an "Akun" nav tab, and their usual role-kerja dashboard gets an extra "Akun menunggu persetujuan" card while sign-ups are waiting.
 - Doctors get two nav tabs: **"Daftar Pasien"** (`/pasien/saya`, only their DPJP patients) and **"Daftar Pasien Penuh"** (`/pasien`, everyone). Other roles have one "Daftar Pasien" tab. Both pages render `components/patient-list.tsx`. A doctor's "Tugas saya" on the dashboard only lists their own patients.
 - `/penyinaran` lists `PENYINARAN` patients grouped by machine, with today's attendance. The nav tab is labeled "Absen Penyinaran" for administrasi and "Penyinaran Hari Ini" for RTT, and RTT can record fractions inline there for patients marked hadir.
 - **"Info Pesawat"** tab (`/pesawat`, all roles, right after the patient-list tab(s)) is **per day**. For each external machine (Synergy, Precise, Cobalt, not Brakiterapi) it shows occupancy on the selected date (`?tanggal=`, `DateNav`) against the daily quota (65 / 65 / 30). Below that is a 20-working-day bar strip (sky, amber at ≥ 90%, rose when full; click a day to select it) and that day's patients ("Fx k/n" or "Verifikasi & mulai"). The quota is a hard limit only when booking at POLI (and changing the machine at PLANNING). Delays can still push a day over, and that shows in rose. The Planning machine dropdown labels each machine "tersedia" / "penuh N hari" for this patient's remaining days.
-- **Dashboard is date-oriented** for all roles: for doctors, "Poli hari ini" then "Tugas saya" (Delineasi), for others "Tugas saya", stays at the top (numbered by due-date priority, see Due dates). Under it is an **Agenda** with a `DateNav` (`?tanggal=`, ‹ › by working day) listing CT Sim, Verifikasi & mulai penyinaran (also the Delineasi + Planning due date), Selesai penyinaran, and per-machine occupancy against quota for that date. Due dates appear **only** in Tugas saya.
+- **Dashboard is date-oriented** for all roles: for doctors, "Poli hari ini" then "Tugas saya" (Delineasi), for others "Tugas saya", stays at the top (numbered by due-date priority, see Due dates). Under it is an **Agenda** with a `DateNav` (`?tanggal=`, ‹ › by working day) listing CT Sim (count shown as n/7, rose when full), Verifikasi & mulai penyinaran (also the Delineasi + Planning due date), Selesai penyinaran, and per-machine occupancy against quota for that date. Due dates appear **only** in Tugas saya.
 - Patient list has a **"Verifikasi"** column (all list tabs, including the doctor's two). It shows the planned `tgl_verifikasi` (or the actual verification date once done), "terlambat" in rose when it has passed, and "-" before the POLI ACC. The user asked for this to be the only date in the list.
-- Poli form: "Rencana pesawat" select + the `ctsim` picker (40 working days in a Mon–Fri grid). Full dates are struck through and disabled, and free ones show "Verif dd MMM" and the smallest remaining quota. The ACC confirmation dialog also lists Verifikasi & fraksi 1 and the expected last fraction.
+- Poli form: "Rencana pesawat" select + the `ctsim` picker (40 working days in a Mon–Fri grid). Full dates are struck through and disabled ("CT Sim penuh" when only the CT Simulator is full, "Penuh" otherwise, the reason in the tooltip), and free ones show "Verif dd MMM", the machine's smallest remaining quota ("Synergy sisa n"), and "CT sisa n". The ACC confirmation dialog also lists Verifikasi & fraksi 1 and the expected last fraction.
 - Kembalikan uses `components/return-form.tsx` (target select + required reason), both inside `StageActionPanel` and, for RTT during `PENYINARAN`, in a "Kembalikan untuk replanning" section.
 - Every ACC opens a confirmation dialog (`StageActionPanel`) that says "Perhatikan baik-baik kembali datanya sebelum ACC dan melanjutkan ke proses berikutnya." and lists the values being submitted.
 
@@ -239,19 +285,17 @@ backend directly:
 - Tailwind CSS 4 is wired through the `@tailwindcss/turbopack` loader in `next.config.ts` (`turbopack.rules`), not PostCSS.
 - Forms use server actions + `useActionState`, returning `ActionState` (`{ error } | { success }`), and `revalidatePath` after writes.
 
-## Planned next step: migrate to the real website
+## Deployment: Supabase + Vercel
 
-The user wants to "init and migrate to the website" (deploy on Vercel) after the supervisor
-demo. The direction proposed was to **match the user's other project,
-`C:\Users\sayyi\Documents\kalibrasi-radiologi`** (Neon Postgres via Vercel Storage +
-Auth.js v5 credentials with bcrypt) instead of Supabase. Confirm this choice with the user
-before removing the Supabase code. The rough plan:
+On 2026-10-10 the user chose to go live on **Supabase + Vercel**, the existing production path
+(not the Neon + Auth.js plan once proposed to match `kalibrasi-radiologi`). The step-by-step
+setup (migrations, Vercel env vars, Supabase URL config, Google OAuth client, first Master via
+`npm run akun:master`) is in the README. Keep demo mode working for future presentations, and
+keep the UI rules above (no kanban in production, the teal "+ Pasien baru" button).
 
-1. Production backend: replace PGlite with a Neon connection in the same `asUser` pattern (`set_config` + `set local role authenticated`), keeping the migration SQL and RPCs unchanged. The `auth.users`/`auth.uid()` stub from `lib/demo/db.ts` becomes part of the migration, or a real `users` table with `password_hash`.
-2. Auth: Auth.js credentials provider, following kalibrasi-radiologi's `src/auth.ts` (including its handling of stale-cookie decryption errors). No public sign-up. Accounts are created by an admin or a seed script.
-3. Remove `@supabase/*`, `lib/supabase/`, and the Supabase parts of the README and `.env.example`. Keep demo mode working for future presentations.
-4. Apply the UI rules above: no kanban in production, keep the teal "+ Pasien baru" button.
-5. Before going live with real data: agree on the confirmed workflow with the department, decide on account management (who creates users and changes roles), and check hospital policy for storing patient data on Vercel/Neon.
+Before going live with real data: agree on the confirmed workflow with the department, and check
+hospital policy for storing patient data on Vercel/Supabase. Supabase's built-in email sender is
+heavily rate-limited, so email sign-up needs custom SMTP for real use.
 
 Open questions for the supervisor: exact fields per stage, which returns are allowed, whether
 nurses need more actions (e.g. weekly side-effect checks during treatment), whether stages

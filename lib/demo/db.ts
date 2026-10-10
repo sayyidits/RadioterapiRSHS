@@ -3,7 +3,7 @@ import { PGlite, type Transaction } from "@electric-sql/pglite";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { DEMO_USERS, buildDemoPatients, type DemoKey } from "../demo-seed";
+import { DEMO_PENDAFTAR, DEMO_USERS, buildDemoPatients, type DemoKey } from "../demo-seed";
 
 // Mode demo: Postgres (PGlite) berjalan di dalam proses Next.js, memakai
 // migration SQL yang sama dengan Supabase. Data disimpan di node_modules/.cache/demo-db
@@ -19,7 +19,8 @@ const SUPABASE_STUB = `
   create table auth.users (
     id uuid primary key default gen_random_uuid(),
     email text,
-    raw_user_meta_data jsonb
+    raw_user_meta_data jsonb,
+    raw_app_meta_data jsonb
   );
   create function auth.uid() returns uuid language sql stable as $$
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
@@ -99,11 +100,21 @@ async function initialize(db: PGlite, fingerprint: string) {
   await db.exec("create schema if not exists app_private; create table app_private.demo_meta (fingerprint text not null)");
   await db.query("insert into app_private.demo_meta (fingerprint) values ($1)", [fingerprint]);
 
+  // Akun demo dibuat "administrator": role di app_metadata, jadi langsung aktif (sama dengan scripts/seed.ts)
   for (const u of DEMO_USERS) {
-    await db.query("insert into auth.users (id, email, raw_user_meta_data) values ($1, $2, $3::jsonb)", [
-      u.id,
-      u.email,
-      JSON.stringify({ full_name: u.full_name, role: u.role }),
+    await db.query(
+      "insert into auth.users (id, email, raw_user_meta_data, raw_app_meta_data) values ($1, $2, $3::jsonb, $4::jsonb)",
+      [u.id, u.email, JSON.stringify({ full_name: u.full_name }), JSON.stringify({ role: u.role, akses: u.akses ?? "nakes" })],
+    );
+  }
+  // Pendaftar mandiri: profil 'baru' dari trigger, lalu sebagian sudah melengkapi profil
+  for (const p of DEMO_PENDAFTAR) {
+    await db.query("insert into auth.users (id, email, raw_user_meta_data) values ($1, $2, '{}'::jsonb)", [p.id, p.email]);
+    await db.query("update public.profiles set full_name = $2, role = $3, status = $4 where id = $1", [
+      p.id,
+      p.full_name,
+      p.role,
+      p.status,
     ]);
   }
 

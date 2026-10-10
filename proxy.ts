@@ -9,8 +9,15 @@ export async function proxy(request: NextRequest) {
 
 /** Mode demo: cukup cek cookie role yang dipilih. */
 function demoGate(request: NextRequest) {
-  const hasRole = request.cookies.has(DEMO_COOKIE);
   const onLogin = request.nextUrl.pathname.startsWith("/login");
+  // Cookie berisi akun yang tidak dikenal (getCurrentUser mengirim ke /login?sesi=habis):
+  // hapus di sini, kalau tidak /login dan / saling redirect tanpa henti
+  if (onLogin && request.nextUrl.searchParams.has("sesi")) {
+    const res = NextResponse.next();
+    res.cookies.delete(DEMO_COOKIE);
+    return res;
+  }
+  const hasRole = request.cookies.has(DEMO_COOKIE);
   if (!hasRole && !onLogin) return NextResponse.redirect(new URL("/login", request.url));
   if (hasRole && onLogin) return NextResponse.redirect(new URL("/", request.url));
   return NextResponse.next();

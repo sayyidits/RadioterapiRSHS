@@ -29,11 +29,13 @@ async function ensureUsers() {
       console.log(`✓ akun ${u.email} sudah ada`);
       continue;
     }
+    // Role di app_metadata: hanya bisa diisi lewat service role (lihat 0007_akun_terdaftar.sql)
     const { data: created, error: err } = await admin.auth.admin.createUser({
       email: u.email,
       password,
       email_confirm: true,
-      user_metadata: { full_name: u.full_name, role: u.role },
+      user_metadata: { full_name: u.full_name },
+      app_metadata: { role: u.role, akses: u.akses ?? "nakes" },
     });
     if (err) throw err;
     ids[u.key] = created.user.id;

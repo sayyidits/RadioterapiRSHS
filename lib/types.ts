@@ -1,9 +1,27 @@
-import type { Role, StageKey } from "./workflow";
+import type { Akses, Role, StageKey } from "./workflow";
 
 export type Profile = {
   id: string;
   full_name: string;
   role: Role;
+};
+
+/** baru: belum melengkapi profil · menunggu: menunggu persetujuan Admin/Master */
+export type StatusAkun = "baru" | "menunggu" | "aktif" | "ditolak" | "nonaktif";
+
+/** User aktif yang sedang login: role kerja + hak akses pengelolaan akun */
+export type CurrentUser = Profile & { email: string; akses: Akses };
+
+/** Akun beserta status persetujuannya (halaman Akun milik Admin/Master) */
+export type Akun = {
+  id: string;
+  full_name: string;
+  email: string | null;
+  role: Role | null;
+  akses: Akses;
+  status: StatusAkun;
+  created_at: string;
+  diproses_at: string | null;
 };
 
 export type Patient = {

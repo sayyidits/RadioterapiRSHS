@@ -4,9 +4,9 @@ import { usePathname } from "next/navigation";
 import { useRef } from "react";
 import { demoSignIn, resetDemo } from "@/app/login/actions";
 import { SubmitButton } from "@/components/submit-button";
-import { ROLES, type Role } from "@/lib/workflow";
+import { AKSES, ROLES, type Akses, type Role } from "@/lib/workflow";
 
-type DemoUser = { id: string; full_name: string; role: Role };
+type DemoUser = { id: string; full_name: string; role: Role; akses?: Akses };
 
 /** Dropdown ganti role di header (mode demo). Tetap di halaman yang sama. */
 export function RoleSwitcher({ users, currentId }: { users: DemoUser[]; currentId: string }) {
@@ -29,6 +29,7 @@ export function RoleSwitcher({ users, currentId }: { users: DemoUser[]; currentI
           <option key={u.id} value={u.id}>
             {/* Role yang punya lebih dari satu akun (dokter) dibedakan dengan nama */}
             {users.filter((x) => x.role === u.role).length > 1 ? `${ROLES[u.role]} · ${u.full_name.split(",")[0]}` : ROLES[u.role]}
+            {u.akses && ` (${AKSES[u.akses]})`}
           </option>
         ))}
       </select>

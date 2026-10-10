@@ -1,8 +1,9 @@
 import Link from "next/link";
 import { StageBadge } from "@/components/badges";
+import { ProgressBar } from "@/components/progress-bar";
 import { age, daysSince, formatDate, todayISO } from "@/lib/format";
 import type { Patient } from "@/lib/types";
-import { STAGE_KEYS, actorsLabel, poliHangus } from "@/lib/workflow";
+import { actorsLabel, poliHangus, stageIndex } from "@/lib/workflow";
 
 export function PatientTable({
   patients,
@@ -33,8 +34,7 @@ export function PatientTable({
           </tr>
         </thead>
         <tbody className="divide-y divide-slate-100">
-          {patients.map((p) => {
-            return (
+          {patients.map((p) => (
               <tr key={p.id} className="hover:bg-slate-50">
                 <td className="px-5 py-3">
                   <Link href={`/pasien/${p.id}`} className="font-medium text-slate-900 hover:text-teal-700">
@@ -66,8 +66,7 @@ export function PatientTable({
                   )}
                 </td>
               </tr>
-            );
-          })}
+          ))}
         </tbody>
       </table>
     </div>
@@ -79,9 +78,9 @@ export function PatientTable({
  * Pasien yang belum di-ACC Poli belum punya jadwal.
  */
 function VerificationDate({ patient: p, today }: { patient: Patient; today: string }) {
-  const idx = STAGE_KEYS.indexOf(p.current_stage);
-  if (idx <= STAGE_KEYS.indexOf("POLI")) return <>-</>;
-  const done = idx > STAGE_KEYS.indexOf("VERIFIKASI");
+  const idx = stageIndex(p.current_stage);
+  if (idx <= stageIndex("POLI")) return <>-</>;
+  const done = idx > stageIndex("VERIFIKASI");
   const actual = p.data.VERIFIKASI?.tanggal_verifikasi;
   const date = done && typeof actual === "string" ? actual : p.tgl_verifikasi;
   if (!date) return <>-</>;
@@ -100,16 +99,7 @@ function FractionProgress({ done, total }: { done: number; total: number }) {
       <span>
         {done}/{total}
       </span>
-      <div
-        className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100"
-        role="progressbar"
-        aria-valuemin={0}
-        aria-valuemax={total}
-        aria-valuenow={done}
-        aria-label={`${done} dari ${total} fraksi`}
-      >
-        <div className="h-full rounded-full bg-sky-300" style={{ width: `${(done / total) * 100}%` }} />
-      </div>
+      <ProgressBar value={done} max={total} label={`${done} dari ${total} fraksi`} className="mt-1 h-1.5" />
     </div>
   );
 }

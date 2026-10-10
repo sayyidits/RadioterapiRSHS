@@ -1,8 +1,12 @@
-// Pemesanan slot pesawat: dipakai pemilih tanggal CT Sim di Poli dan pilihan pesawat di Planning.
-// Aturan harus sama dengan tgl_verifikasi_dari / kuota_penuh_pada di 0004_jadwal_kuota.sql
+// Pemesanan slot pesawat & CT Simulator: dipakai pemilih tanggal CT Sim di Poli dan pilihan
+// pesawat di Planning. Aturan harus sama dengan tgl_verifikasi_dari / kuota_penuh_pada di
+// 0004_jadwal_kuota.sql dan kuota CT Sim di 0006_kuota_ct_sim.sql
 // (database tetap yang menegakkan; di sini hanya untuk tampilan).
 import { addDays, workingDayFrom, workingDaysFrom } from "./holidays";
-import { JEDA_CT_VERIFIKASI, kuotaOf } from "./workflow";
+import { JEDA_CT_VERIFIKASI, KUOTA_CT_SIM, kuotaOf } from "./workflow";
+
+/** Jumlah kandidat tanggal CT Sim di pemilih tanggal Poli (hari kerja, ±8 minggu) */
+export const JUMLAH_PILIHAN_CT = 40;
 
 /** Jumlah pasien per pesawat per tanggal, mis. { Cobalt: { "2026-10-26": 30 } } */
 export type Hunian = Record<string, Record<string, number>>;
@@ -43,17 +47,30 @@ export function cekKuota(hunian: Hunian, mesin: string, mulai: string, jumlahHar
   return { tersedia: hariPenuh === 0, penuhPada, hariPenuh, sisaMin: Math.max(0, sisaMin), hari };
 }
 
-export type CtSimOption = CekKuota & { ct: string; verifikasi: string; selesai: string };
+export type CtSimOption = CekKuota & {
+  ct: string;
+  verifikasi: string;
+  selesai: string;
+  /** Sisa kuota CT Simulator di tanggal ini (0 = penuh) */
+  ctSisa: number;
+  /** Bisa dipilih: kuota CT Sim dan kuota pesawat sama-sama masih ada */
+  bisa: boolean;
+};
 
-/** Kandidat tanggal CT Sim (hari kerja mulai `dari`) beserta ketersediaan kuotanya. */
+/**
+ * Kandidat tanggal CT Sim (hari kerja mulai `dari`) beserta ketersediaan kuotanya.
+ * `ctSim`: jumlah pasien yang sudah dijadwalkan CT Sim per tanggal (lihat jumlah_ct_sim di SQL).
+ */
 export function ctSimOptions({
   hunian,
+  ctSim,
   mesin,
   jumlahFraksi,
   dari,
   jumlah,
 }: {
   hunian: Hunian;
+  ctSim: Record<string, number>;
   mesin: string;
   /** Sisa fraksi yang akan diberikan */
   jumlahFraksi: number;
@@ -63,6 +80,7 @@ export function ctSimOptions({
   return workingDaysFrom(dari, jumlah).map((ct) => {
     const verifikasi = tglVerifikasiDari(ct);
     const cek = cekKuota(hunian, mesin, verifikasi, jumlahFraksi);
-    return { ct, verifikasi, selesai: cek.hari.at(-1) ?? verifikasi, ...cek };
+    const ctSisa = Math.max(0, KUOTA_CT_SIM - (ctSim[ct] ?? 0));
+    return { ct, verifikasi, selesai: cek.hari.at(-1) ?? verifikasi, ...cek, ctSisa, bisa: cek.tersedia && ctSisa > 0 };
   });
 }

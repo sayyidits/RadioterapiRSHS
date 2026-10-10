@@ -19,6 +19,7 @@ Website untuk memantau perjalanan pasien radioterapi dari pendaftaran sampai fra
 
 - **Jadwal berdasarkan kuota pesawat**: di Poli, dokter/perawat memilih rencana pesawat dan tanggal CT Sim (H). Verifikasi jatuh di H+14 hari (digeser ke hari kerja bila libur), dan fraksi pertama diberikan di hari yang sama. Delineasi dan Planning harus selesai sebelum tanggal verifikasi. Tanggal CT Sim hanya bisa dipilih kalau **setiap** hari penyinaran pasien (mulai verifikasi, satu fraksi per hari kerja) masih ada kuota di pesawat itu. Aturan ini mutlak dan dicek ulang oleh database.
 - **Kuota harian pesawat**: Synergy 65, Precise 65, Cobalt 30 pasien per hari. Brakiterapi tanpa kuota.
+- **Kuota CT Simulator**: maksimal 7 pasien per hari untuk semua pesawat. Tanggal CT Sim yang sudah berisi 7 pasien dicoret ("CT Sim penuh") dan ditolak database, walaupun kuota pesawatnya masih ada.
 - **Tugas saya** di dashboard diberi nomor prioritas berdasarkan due date: yang terlambat paling atas, lalu yang paling dekat. Due date: CT Sim = tanggal CT Sim, Delineasi/Planning/Verifikasi = tanggal verifikasi, Penyinaran = setiap hari kerja. Pasien di Poli belum punya due date. Untuk dokter, antrean Poli tampil terpisah di bagian **Poli hari ini** (di atas Tugas saya), sehingga Tugas saya dokter hanya berisi Delineasi.
 - **Dashboard per tanggal**: semua role bisa memilih tanggal dan melihat agenda hari itu: CT Sim, verifikasi & mulai penyinaran, selesai penyinaran, dan jumlah pasien tiap pesawat dibanding kuota.
 - **DPJP** dipilih administrasi saat pendaftaran. Tahap dokter hanya bisa dikerjakan DPJP pasien tersebut, dan untuk sekarang DPJP belum bisa dipindah.
@@ -67,45 +68,70 @@ Skenario demo singkat:
 7. **Administrasi**: menu **Absen Penyinaran** → tandai pasien hadir / tidak hadir.
 8. **RTT**: menu **Penyinaran Hari Ini** → catat fraksi untuk pasien yang hadir, dikelompokkan per mesin. Untuk melihat penyelesaian dengan cepat, pakai pasien "Slamet Riyadi" (3/5 fraksi). Di halaman pasien yang sedang penyinaran ada **Kembalikan untuk replanning**.
 9. **Semua role**: menu **Info Pesawat** → jumlah pasien per hari di tiap pesawat dibanding kuota harian (Cobalt 30). Klik salah satu hari di grafik untuk melihat daftar pasiennya. Di dashboard, ganti tanggal di bagian **Agenda**.
+10. **dr. Andi (Dokter + Master)** atau **Dewi Lestari (Administrasi + Admin)**: menu **Akun** → setujui atau tolak pendaftar contoh ("dr. Budi Hartono", "Ns. Putri Maharani"). Dokter yang disetujui langsung muncul di pilihan DPJP. Bandingkan: Admin tidak bisa mengubah akun dr. Andi (Master) dan tidak bisa memberi hak Admin. Halaman login Google dan lengkapi profil hanya ada di mode Supabase.
 
-## Setup dengan Supabase (untuk pemakaian sebenarnya)
+## Akun dan login (mode Supabase)
 
-1. **Buat project Supabase** di https://supabase.com (gratis).
+- Siapa pun bisa membuat akun dengan **Google** atau **email + password** di halaman login.
+- Akun baru wajib **melengkapi profil**: nama lengkap beserta gelar dan role yang diminta.
+- Setelah itu akun **menunggu persetujuan** dan belum bisa melihat data pasien apa pun.
+- Setiap akun punya **role kerja** (Dokter, Perawat, RTT, Fismed, Administrasi), yang menentukan tahap yang bisa di-ACC, dan **hak akses** dengan urutan **Master → Admin → Nakes**:
+  - **Nakes**: tidak mengelola akun.
+  - **Admin**: menyetujui/menolak pendaftar, mengubah role kerja, dan menonaktifkan akun Nakes di menu **Akun**. Tidak bisa mengubah akun Admin/Master atau memberi hak Admin/Master.
+  - **Master**: mengelola semua akun, termasuk mengangkat Admin atau Master lain.
+  - Status dan hak akses akun sendiri tidak bisa diubah sendiri.
+- Aturan ini ditegakkan di database (RLS dan fungsi Postgres), bukan hanya di tampilan.
+
+## Setup Supabase + Vercel (untuk pemakaian sebenarnya)
+
+### 1. Supabase dan database
+
+1. **Buat project Supabase** di https://supabase.com (region terdekat: Singapore).
 2. Salin `.env.example` menjadi `.env.local`, lalu isi:
    - `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (atau `..._ANON_KEY`), dari Project Settings → API
-   - `SUPABASE_SERVICE_ROLE_KEY`, dari Project Settings → API (rahasia, hanya untuk script lokal)
    - `SUPABASE_DB_URL`: klik **Connect** di dashboard, lalu pilih connection string mode *Session pooler*
-   - `DEMO_PASSWORD`: password untuk akun demo, minimal 8 karakter
-3. Install lalu siapkan database:
+   - `SUPABASE_SERVICE_ROLE_KEY` dan `DEMO_PASSWORD` hanya perlu kalau ingin menjalankan `db:seed`
+3. Jalankan migration:
    ```bash
    npm install
-   npm run db:setup   # menjalankan migration SQL
-   npm run db:seed    # membuat 6 akun demo dan ±350 pasien dummy
+   npm run db:setup
    ```
-   Kalau tidak mau memakai `SUPABASE_DB_URL`, buka Supabase → SQL Editor, lalu tempel dan jalankan **semua** file di `supabase/migrations/` secara berurutan (0001, 0002, 0003, 0004).
-4. Jalankan: `npm run dev`, lalu buka http://localhost:3000
+   Alternatif tanpa `SUPABASE_DB_URL`: buka Supabase → SQL Editor, lalu tempel dan jalankan **semua** file di `supabase/migrations/` satu per satu secara berurutan (0001 sampai 0009).
+4. `npm run db:seed` (opsional) membuat 6 akun demo (dokter@flowrt.test sebagai Master, admin@flowrt.test sebagai Admin) dan ±350 pasien dummy. **Jangan dijalankan** di database yang akan dipakai sungguhan, atau nonaktifkan akun demo setelahnya.
 
-### Akun demo
+### 2. Deploy ke Vercel
 
-| Role | Email |
-|---|---|
-| Dokter Sp.Onk.Rad | dokter@flowrt.test |
-| Dokter Sp.Onk.Rad (kedua) | dokter2@flowrt.test |
-| Perawat | perawat@flowrt.test |
-| RTT | rtt@flowrt.test |
-| Fisikawan Medis | fismed@flowrt.test |
-| Administrasi | admin@flowrt.test |
+1. Push repo ini ke GitHub, lalu di https://vercel.com pilih **Add New → Project** dan import repo tersebut.
+2. Di **Environment Variables**, isi `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (atau `..._ANON_KEY`). **Jangan** pasang `SUPABASE_SERVICE_ROLE_KEY` atau `SUPABASE_DB_URL` di Vercel.
+3. Deploy, lalu catat alamatnya, mis. `https://flow-radioterapi.vercel.app`.
 
-Semua akun memakai password dari `DEMO_PASSWORD`. Pendaftaran akun publik tidak tersedia. Akun baru dibuat lewat dashboard Supabase (Authentication → Add user) dengan user metadata `{"full_name": "...", "role": "dokter|perawat|rtt|fismed|administrasi"}`.
+### 3. Login email dan Google
 
-> Matikan sign-up publik di Supabase → Authentication → Sign In / Providers → "Allow new users to sign up".
+1. Supabase → **Authentication → URL Configuration**:
+   - **Site URL**: alamat Vercel tadi
+   - **Redirect URLs**: tambahkan `https://<alamat-vercel>/auth/callback` dan `http://localhost:3000/auth/callback`
+2. Supabase → **Authentication → Sign In / Providers**:
+   - **Allow new users to sign up**: aktif (persetujuan Admin/Master yang menyaring akun)
+   - **Email**: aktif, dengan **Confirm email** aktif. Pengiriman email bawaan Supabase sangat dibatasi; untuk pemakaian sebenarnya pasang SMTP sendiri di Authentication → Emails → SMTP Settings.
+3. **Google Cloud Console** (https://console.cloud.google.com):
+   1. Buat project, lalu **APIs & Services → OAuth consent screen**: isi nama aplikasi dan email kontak, tipe *External*.
+   2. **Credentials → Create credentials → OAuth client ID**, tipe *Web application*.
+   3. **Authorized redirect URIs**: salin *Callback URL* dari halaman provider Google di Supabase, bentuknya `https://<project-ref>.supabase.co/auth/v1/callback`.
+   4. Salin **Client ID** dan **Client secret**.
+4. Supabase → **Authentication → Sign In / Providers → Google**: aktifkan, lalu tempel Client ID dan Client secret.
 
-## Deploy ke Vercel
+### 4. Master pertama
 
-Tambahkan environment variable `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (atau `ANON_KEY`) di project Vercel, lalu deploy. **Jangan** pasang `SUPABASE_SERVICE_ROLE_KEY` di Vercel karena aplikasi tidak membutuhkannya.
+1. Buka website, daftar dengan email atau Google, lalu lengkapi profil. Akun akan berstatus menunggu persetujuan.
+2. Beri akun itu hak akses Master (sekali saja, role kerjanya tetap, dari komputer yang punya `.env.local` berisi `SUPABASE_DB_URL`):
+   ```bash
+   npm run akun:master -- email-anda@contoh.com
+   ```
+3. Muat ulang website. Menu **Akun** muncul, dan pendaftaran staf berikutnya disetujui dari sana. Admin dan Master lain diangkat dengan memilih hak akses di halaman Akun.
 
 ## Keamanan
 
-- Semua tabel memakai Row Level Security. User yang login hanya bisa membaca, dan tidak bisa insert/update/delete langsung.
-- Setiap perpindahan tahap lewat fungsi Postgres (`security definer`) yang mengecek role user dan tahap pasien saat itu. Tombol yang disembunyikan di UI hanyalah tampilan, aturan sebenarnya ada di database.
+- Semua tabel memakai Row Level Security. Hanya akun **aktif** (disetujui Admin/Master) yang bisa membaca data pasien. Akun yang belum disetujui hanya bisa membaca profilnya sendiri.
+- Tidak ada yang bisa insert/update/delete langsung. Setiap perubahan lewat fungsi Postgres (`security definer`) yang mengecek role user yang aktif dan tahap pasien saat itu. Tombol yang disembunyikan di UI hanyalah tampilan, aturan sebenarnya ada di database.
+- Role tidak pernah dibaca dari data yang bisa diisi pengguna sendiri (`user_metadata`). Role kerja dan hak akses diberikan Admin/Master sesuai hierarki, atau lewat `app_metadata` oleh administrator.
 - Setiap ACC dan pengembalian tercatat di `stage_events` (siapa, role, kapan, catatan). Setiap pencatatan kehadiran tersimpan sebagai baris baru di `attendance`, jadi perubahan tidak menghapus catatan sebelumnya.

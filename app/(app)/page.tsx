@@ -1,27 +1,31 @@
 import Link from "next/link";
 import { AddPatientButton } from "@/components/add-patient-button";
-import { StageBadge } from "@/components/badges";
+import { CountPill, StageBadge } from "@/components/badges";
 import { DateNav } from "@/components/date-nav";
 import { DueBadge } from "@/components/due-badge";
 import { LoadBar, loadTone } from "@/components/machine-load";
+import { ProgressBar } from "@/components/progress-bar";
+import { StatCards } from "@/components/stat-cards";
 import { getCurrentUser } from "@/lib/auth";
 import { IS_DEMO } from "@/lib/mode";
-import { fractionCounts, fractionsToday, jadwalSinar, listPatients, type JadwalSinarRow } from "@/lib/data";
+import { fractionCounts, jadwalSinar, listAccounts, listPatients, type JadwalSinarRow } from "@/lib/data";
 import { dateWIB, daysSince, formatDate, parseTanggal, todayISO } from "@/lib/format";
 import { isWorkingDay } from "@/lib/holidays";
-import type { Patient } from "@/lib/types";
+import type { Akun, Patient } from "@/lib/types";
 import {
+  KUOTA_CT_SIM,
   KUOTA_PESAWAT,
   MESIN_EKSTERNAL,
   ROLES,
   STAGES,
-  STAGE_KEYS,
   STAGE_MAP,
   actorsLabel,
   canActOn,
+  kelolaAkun,
   dueDate,
   poliHangus,
   stageActors,
+  stageIndex,
   stagesOwnedBy,
   type Role,
   type StageKey,
@@ -31,24 +35,29 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
   const today = todayISO();
   const tanggal = parseTanggal((await searchParams).tanggal);
   const [user, patients, jadwal] = await Promise.all([getCurrentUser(), listPatients(), jadwalSinar(tanggal, tanggal)]);
-  const fractions = await fractionCounts(patients.map((p) => p.id));
 
   const myStages = stagesOwnedBy(user.role);
   // Dokter hanya melihat tugas untuk pasien yang DPJP-nya dia
   const mine = patients.filter((p) => myStages.includes(p.current_stage) && canActOn(p, user));
-  const doneToday = await fractionsToday(mine.filter((p) => p.current_stage === "PENYINARAN").map((p) => p.id));
+  // Jumlah fraksi hanya ditampilkan untuk pasien yang sedang penyinaran
+  const inTreatment = patients.filter((p) => p.current_stage === "PENYINARAN").map((p) => p.id);
+  const [fractions, doneToday, accounts] = await Promise.all([
+    fractionCounts(inTreatment),
+    fractionCounts(
+      mine.filter((p) => p.current_stage === "PENYINARAN").map((p) => p.id),
+      today,
+    ),
+    kelolaAkun(user.akses) ? listAccounts() : [],
+  ]);
+  const pendingAccounts = accounts.filter((a) => a.status === "menunggu");
   const myTasks = prioritize(mine, today, doneToday);
   // Dokter: antrean Poli (belum dijadwalkan) dipisah dari tugas bertanggal (Delineasi)
   const splitPoli = user.role === "dokter";
-  const poliTasks = myTasks.filter((t) => t.patient.current_stage === "POLI");
-  const dueTasks = myTasks.filter((t) => t.patient.current_stage !== "POLI");
-  // Kunjungan Poli yang tidak di-ACC di harinya, untuk didaftarkan ulang administrasi
-  const expired = user.role === "administrasi" ? patients.filter((p) => poliHangus(p, today)) : [];
   const active = patients.filter((p) => p.current_stage !== "SELESAI");
 
   const stats = [
     { label: "Pasien aktif", value: active.length },
-    { label: "Sedang penyinaran", value: patients.filter((p) => p.current_stage === "PENYINARAN").length },
+    { label: "Sedang penyinaran", value: inTreatment.length },
     { label: "Selesai", value: patients.length - active.length },
     { label: "Menunggu saya", value: myTasks.length, highlight: myTasks.length > 0 },
   ];
@@ -60,55 +69,37 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
           <h1 className="text-xl font-semibold">Halo, {user.full_name}</h1>
           <p className="text-sm text-slate-500">Masuk sebagai {ROLES[user.role]}</p>
         </div>
-        {user.role === "administrasi" && (
-          <AddPatientButton />
-        )}
+        {user.role === "administrasi" && <AddPatientButton />}
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {stats.map((s) => (
-          <div key={s.label} className={`card p-4 ${s.highlight ? "border-teal-300 bg-teal-50" : ""}`}>
-            <p className="text-xs font-medium text-slate-500">{s.label}</p>
-            <p className={`mt-1 text-2xl font-semibold ${s.highlight ? "text-teal-800" : ""}`}>{s.value}</p>
-          </div>
-        ))}
-      </div>
+      <StatCards stats={stats} />
 
-      {splitPoli ? (
-        <>
-          <TaskSection
-            title="Poli hari ini"
-            hint="Pasien menunggu pemeriksaan dan jadwal CT Sim, urut dari yang paling lama menunggu."
-            stages={["POLI"]}
-            tasks={poliTasks}
-            today={today}
-            fractions={fractions}
-          />
-          <TaskSection
-            title="Tugas saya"
-            hint="Urut dari due date terdekat, yang terlambat paling atas."
-            stages={myStages.filter((s) => s !== "POLI")}
-            tasks={dueTasks}
-            today={today}
-            fractions={fractions}
-          />
-        </>
-      ) : (
-        // Administrasi: pendaftaran langsung masuk Poli, jadi tugasnya adalah daftar Poli hangus di bawah
-        myStages.length > 0 &&
-        user.role !== "administrasi" && (
-          <TaskSection
-            title="Tugas saya"
-            hint="Urut dari due date terdekat, yang terlambat paling atas."
-            stages={myStages}
-            tasks={myTasks}
-            today={today}
-            fractions={fractions}
-          />
-        )
+      {splitPoli && (
+        <TaskSection
+          title="Poli hari ini"
+          hint="Pasien menunggu pemeriksaan dan jadwal CT Sim, urut dari yang paling lama menunggu."
+          stages={["POLI"]}
+          tasks={myTasks.filter((t) => t.patient.current_stage === "POLI")}
+          today={today}
+          fractions={fractions}
+        />
       )}
+      {/* Admin/Master: pendaftar yang menunggu persetujuan, di atas tugas role kerjanya */}
+      {pendingAccounts.length > 0 && <PendingAccounts accounts={pendingAccounts} />}
 
-      {user.role === "administrasi" && <ExpiredPoli patients={expired} />}
+      {/* Administrasi: pendaftaran langsung masuk Poli, jadi tugasnya adalah daftar Poli hangus */}
+      {user.role === "administrasi" ? (
+        <ExpiredPoli patients={patients.filter((p) => poliHangus(p, today))} />
+      ) : (
+        <TaskSection
+          title="Tugas saya"
+          hint="Urut dari due date terdekat, yang terlambat paling atas."
+          stages={splitPoli ? myStages.filter((s) => s !== "POLI") : myStages}
+          tasks={splitPoli ? myTasks.filter((t) => t.patient.current_stage !== "POLI") : myTasks}
+          today={today}
+          fractions={fractions}
+        />
+      )}
 
       <Agenda tanggal={tanggal} today={today} patients={patients} jadwal={jadwal} />
 
@@ -118,19 +109,65 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
   );
 }
 
+/** Kepala kartu: judul + jumlah + keterangan, dengan isi tambahan di kanan */
+function SectionHeader({ title, count, hint, children }: { title: string; count: number; hint: string; children?: React.ReactNode }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
+      <div>
+        <h2 className="font-semibold">
+          {title}
+          <CountPill n={count} className="ml-2" />
+        </h2>
+        <p className="text-xs text-slate-500">{hint}</p>
+      </div>
+      {children}
+    </div>
+  );
+}
+
+/** Admin/Master: pendaftaran akun yang menunggu persetujuan */
+function PendingAccounts({ accounts }: { accounts: Akun[] }) {
+  return (
+    <section className="card">
+      <SectionHeader
+        title="Akun menunggu persetujuan"
+        count={accounts.length}
+        hint="Akun baru hanya dapat melihat data pasien setelah Anda setujui."
+      >
+        <Link href="/akun" className="btn btn-secondary px-3 py-1.5">
+          Kelola akun
+        </Link>
+      </SectionHeader>
+      {accounts.length === 0 ? (
+        <p className="px-5 py-6 text-sm text-slate-500">Tidak ada pendaftaran yang menunggu.</p>
+      ) : (
+        <ul className="divide-y divide-slate-100">
+          {accounts.map((a) => (
+            <li key={a.id}>
+              <Link href="/akun" className="flex flex-wrap items-center justify-between gap-2 px-5 py-3 hover:bg-slate-50">
+                <div>
+                  <p className="font-medium">{a.full_name}</p>
+                  <p className="text-xs text-slate-500">{a.email}</p>
+                </div>
+                <span className="text-xs text-slate-600">{a.role ? ROLES[a.role] : "-"}</span>
+              </Link>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  );
+}
+
 /** Pasien yang kunjungan Polinya hangus: didaftarkan ulang dari halaman pasien saat datang lagi */
 function ExpiredPoli({ patients }: { patients: Patient[] }) {
   return (
     <section className="card">
-      <div className="border-b border-slate-100 px-5 py-4">
-        <h2 className="font-semibold">
-          Poli hangus
-          <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">{patients.length}</span>
-        </h2>
-        <p className="text-xs text-slate-500">
-          Tidak di-ACC di hari kunjungan Poli. Buka pasien dan daftarkan ulang bila pasien datang lagi.
-        </p>
-      </div>
+      <SectionHeader
+        title="Poli hangus"
+        count={patients.length}
+        hint="Tidak di-ACC di hari kunjungan Poli. Buka pasien dan daftarkan ulang bila pasien datang lagi."
+      />
       {patients.length === 0 ? (
         <p className="px-5 py-6 text-sm text-slate-500">Tidak ada kunjungan Poli yang hangus.</p>
       ) : (
@@ -174,16 +211,9 @@ function TaskSection({
 }) {
   return (
     <section className="card">
-      <div className="flex flex-wrap items-center justify-between gap-2 border-b border-slate-100 px-5 py-4">
-        <div>
-          <h2 className="font-semibold">
-            {title}
-            <span className="ml-2 rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">{tasks.length}</span>
-          </h2>
-          <p className="text-xs text-slate-500">{hint}</p>
-        </div>
+      <SectionHeader title={title} count={tasks.length} hint={hint}>
         <span className="text-xs text-slate-500">Tahap: {stages.map((s) => STAGE_MAP[s].label).join(", ")}</span>
-      </div>
+      </SectionHeader>
       {tasks.length === 0 ? (
         <p className="px-5 py-6 text-sm text-slate-500">Tidak ada pasien yang menunggu tindakan Anda.</p>
       ) : (
@@ -251,16 +281,14 @@ function Agenda({
   jadwal: JadwalSinarRow[];
 }) {
   const byId = new Map(patients.map((p) => [p.id, p]));
-  // Tanggal rencana hanya berlaku setelah ACC Poli (pasien yang dikembalikan ke Poli dijadwal ulang)
-  const scheduled = patients.filter((p) => p.current_stage !== "PENDAFTARAN" && p.current_stage !== "POLI");
-  const stageIdx = (p: Patient) => STAGE_KEYS.indexOf(p.current_stage);
+  // Tanggal rencana hanya berlaku setelah ACC Poli
+  const scheduled = patients.filter((p) => stageIndex(p.current_stage) > stageIndex("POLI"));
   const ctSim = scheduled.filter((p) => p.tgl_ct_sim === tanggal);
   const verifikasi = scheduled.filter((p) => p.tgl_verifikasi === tanggal);
   const selesai = jadwal.flatMap((j) => {
     const p = byId.get(j.patient_id);
     return p && j.fraksi_ke === p.total_fraksi ? [p] : [];
   });
-  const perMesin = (m: string) => jadwal.filter((j) => j.mesin === m).length;
 
   return (
     <section className="card">
@@ -278,9 +306,10 @@ function Agenda({
         <AgendaColumn
           title="CT Simulator"
           empty="Tidak ada CT Sim."
+          kuota={KUOTA_CT_SIM}
           items={ctSim.map((p) => ({
             patient: p,
-            note: stageIdx(p) > STAGE_KEYS.indexOf("CT_SIM") ? "Sudah CT Sim" : undefined,
+            note: stageIndex(p.current_stage) > stageIndex("CT_SIM") ? "Sudah CT Sim" : undefined,
             warn: p.current_stage === "CT_SIM" && tanggal < today,
           }))}
         />
@@ -289,15 +318,11 @@ function Agenda({
           hint="Due date Delineasi + Planning"
           empty="Tidak ada verifikasi."
           items={verifikasi.map((p) => {
-            const before = stageIdx(p) < STAGE_KEYS.indexOf("VERIFIKASI");
+            const diff = stageIndex(p.current_stage) - stageIndex("VERIFIKASI");
             return {
               patient: p,
-              note: before
-                ? `Masih ${STAGE_MAP[p.current_stage].label}`
-                : stageIdx(p) > STAGE_KEYS.indexOf("VERIFIKASI")
-                  ? "Sudah verifikasi"
-                  : undefined,
-              warn: before && tanggal <= today,
+              note: diff < 0 ? `Masih ${STAGE_MAP[p.current_stage].label}` : diff > 0 ? "Sudah verifikasi" : undefined,
+              warn: diff < 0 && tanggal <= today,
             };
           })}
         />
@@ -312,7 +337,7 @@ function Agenda({
           <p className="mb-3 text-xs text-slate-500">Pasien dibanding kuota harian</p>
           <ul className="space-y-3">
             {MESIN_EKSTERNAL.map((m) => {
-              const n = perMesin(m);
+              const n = jadwal.filter((j) => j.mesin === m).length;
               const kuota = KUOTA_PESAWAT[m];
               return (
                 <li key={m}>
@@ -339,11 +364,14 @@ function AgendaColumn({
   title,
   hint,
   empty,
+  kuota,
   items,
 }: {
   title: string;
   hint?: string;
   empty: string;
+  /** Kuota harian: jumlah ditampilkan "n/kuota", rose bila penuh */
+  kuota?: number;
   items: { patient: Patient; note?: string; warn?: boolean }[];
 }) {
   return (
@@ -353,7 +381,15 @@ function AgendaColumn({
           <h3 className="text-sm font-semibold">{title}</h3>
           {hint && <p className="text-xs text-slate-500">{hint}</p>}
         </div>
-        <span className="rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700">{items.length}</span>
+        {kuota ? (
+          <span
+            className={`rounded-full px-2 py-0.5 text-xs font-semibold ${items.length >= kuota ? "bg-rose-50 text-rose-700" : "bg-slate-100 text-slate-700"}`}
+          >
+            {items.length}/{kuota}
+          </span>
+        ) : (
+          <CountPill n={items.length} />
+        )}
       </div>
       {items.length === 0 ? (
         <p className="text-xs text-slate-400">{empty}</p>
@@ -423,6 +459,8 @@ function StageBoard({
 }
 
 function KanbanCard({ patient: p, done }: { patient: Patient; done: number }) {
+  // Pasien selesai pasti sudah menerima semua fraksinya, jadi jumlahnya tidak perlu di-query
+  const given = p.current_stage === "SELESAI" ? (p.total_fraksi ?? 0) : done;
   const showFx = p.total_fraksi && (p.current_stage === "PENYINARAN" || p.current_stage === "SELESAI");
   return (
     <Link
@@ -434,11 +472,9 @@ function KanbanCard({ patient: p, done }: { patient: Patient; done: number }) {
       <p className="mt-1 truncate text-xs text-slate-600">{p.diagnosis}</p>
       {showFx ? (
         <div className="mt-2">
-          <div className="h-1.5 overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full bg-teal-600" style={{ width: `${(done / p.total_fraksi!) * 100}%` }} />
-          </div>
+          <ProgressBar value={given} max={p.total_fraksi!} barClassName="bg-teal-600" />
           <p className="mt-1 text-[11px] text-slate-500">
-            {done}/{p.total_fraksi} fraksi
+            {given}/{p.total_fraksi} fraksi
           </p>
         </div>
       ) : (

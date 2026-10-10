@@ -8,18 +8,29 @@
 // harus mencari tanggal CT Sim yang masih kosong.
 import { tglVerifikasiDari } from "./booking";
 import { addDays, isWorkingDay, nextWorkingDay, prevWorkingDay, workingDayFrom, workingDaysFrom } from "./holidays";
-import { KUOTA_PESAWAT, MESIN_EKSTERNAL, STAGE_KEYS, type Role, type StageKey } from "./workflow";
+import { KUOTA_CT_SIM, KUOTA_PESAWAT, MESIN_EKSTERNAL, STAGE_KEYS, type Akses, type Role, type StageKey } from "./workflow";
 
 /** Kunci akun demo: satu per role, ditambah dokter kedua untuk contoh DPJP */
 export type DemoKey = Role | "dokter2";
 
-export const DEMO_USERS: { key: DemoKey; id: string; email: string; full_name: string; role: Role }[] = [
-  { key: "dokter", id: "00000000-0000-4000-8000-000000000001", email: "dokter@flowrt.test", full_name: "dr. Andi Pratama, Sp.Onk.Rad", role: "dokter" },
+/** `akses`: hak pengelolaan akun di samping role kerja (bawaan Nakes) */
+export const DEMO_USERS: { key: DemoKey; id: string; email: string; full_name: string; role: Role; akses?: Akses }[] = [
+  { key: "dokter", id: "00000000-0000-4000-8000-000000000001", email: "dokter@flowrt.test", full_name: "dr. Andi Pratama, Sp.Onk.Rad", role: "dokter", akses: "master" },
   { key: "dokter2", id: "00000000-0000-4000-8000-000000000006", email: "dokter2@flowrt.test", full_name: "dr. Maya Anggraini, Sp.Onk.Rad", role: "dokter" },
   { key: "perawat", id: "00000000-0000-4000-8000-000000000002", email: "perawat@flowrt.test", full_name: "Ns. Sari Wulandari", role: "perawat" },
   { key: "rtt", id: "00000000-0000-4000-8000-000000000003", email: "rtt@flowrt.test", full_name: "Budi Santoso, A.Md.Rad", role: "rtt" },
   { key: "fismed", id: "00000000-0000-4000-8000-000000000004", email: "fismed@flowrt.test", full_name: "Rina Kusuma, M.Si", role: "fismed" },
-  { key: "administrasi", id: "00000000-0000-4000-8000-000000000005", email: "admin@flowrt.test", full_name: "Dewi Lestari", role: "administrasi" },
+  { key: "administrasi", id: "00000000-0000-4000-8000-000000000005", email: "admin@flowrt.test", full_name: "Dewi Lestari", role: "administrasi", akses: "admin" },
+];
+
+/**
+ * Contoh pendaftar mandiri untuk halaman Akun (Admin/Master), hanya di mode demo:
+ * dua menunggu persetujuan, satu belum melengkapi profil.
+ */
+export const DEMO_PENDAFTAR: { id: string; email: string; full_name: string; role: Role | null; status: "baru" | "menunggu" }[] = [
+  { id: "00000000-0000-4000-8000-000000000101", email: "budi.hartono@gmail.com", full_name: "dr. Budi Hartono, Sp.Onk.Rad", role: "dokter", status: "menunggu" },
+  { id: "00000000-0000-4000-8000-000000000102", email: "putri.maharani@gmail.com", full_name: "Ns. Putri Maharani, S.Kep", role: "perawat", status: "menunggu" },
+  { id: "00000000-0000-4000-8000-000000000103", email: "fitri.amelia@gmail.com", full_name: "fitri.amelia@gmail.com", role: null, status: "baru" },
 ];
 
 type Identity = {
@@ -189,10 +200,7 @@ export function buildDemoPatients(ids: Record<DemoKey, string>, now = Date.now()
 
 /** Hari kerja ke-n dari hari ini (0 = hari kerja ini), negatif = ke belakang */
 function workday(today: string, n: number) {
-  if (n >= 0) return workingDaysFrom(today, n + 1)[n];
-  let d = today;
-  for (let i = 0; i < -n; i++) d = prevWorkingDay(d);
-  return d;
+  return n >= 0 ? workingDaysFrom(today, n + 1)[n] : minusWorkdays(today, -n);
 }
 
 /** n hari kerja setelah tanggal ini */
@@ -286,9 +294,11 @@ function random(seed: number) {
 }
 
 /**
- * Pasien pengisi per pesawat: hunian dibuat tepat sama dengan kuota pada rentang FULL.
+ * Pasien pengisi per pesawat: hunian dibuat sama dengan kuota pada rentang FULL.
  * Hari ke-0 diisi pasien yang sedang penyinaran, hari berikutnya diisi pasien yang
  * verifikasinya jatuh di hari itu (tahap CT Sim s.d. Verifikasi, tergantung tanggal CT Sim).
+ * Setiap tanggal CT Sim berisi paling banyak KUOTA_CT_SIM pasien, jadi hari yang CT Sim-nya
+ * sudah penuh diisi di hari berikutnya (hunian di awal rentang naik bertahap).
  */
 function fillerSpecs(named: Spec[], today: string): Spec[] {
   const rnd = random(20261009);
@@ -303,49 +313,83 @@ function fillerSpecs(named: Spec[], today: string): Spec[] {
   const days = workingDaysFrom(today, horizon);
   const indexOf = new Map(days.map((d, k) => [d, k]));
 
-  type Filler = { mesin: string; start: number; len: number; total: number; done: number; verif: string; ct: string };
-  const fillers: Filler[] = [];
+  type Filler = {
+    mesin: string;
+    start: number;
+    len: number;
+    total: number;
+    done: number;
+    verif: string;
+    ct: string;
+    absentAfter?: number;
+  };
 
-  for (const mesin of MESIN_EKSTERNAL) {
-    const kuota = KUOTA_PESAWAT[mesin];
-    const occ = new Array<number>(horizon).fill(0);
-    for (const s of named.filter((s) => s.mesin === mesin)) {
-      for (const d of projectedDays(s, today)) {
-        const k = indexOf.get(d);
-        if (k !== undefined) occ[k]++;
-      }
-    }
+  // Pasien per tanggal CT Sim (kuota CT Simulator), termasuk pasien bernama yang sudah dijadwalkan
+  const ctUsed = new Map<string, number>();
+  for (const s of named) if (s.ct) ctUsed.set(s.ct, (ctUsed.get(s.ct) ?? 0) + 1);
+  const takeCt = (ct: string) => {
+    const n = ctUsed.get(ct) ?? 0;
+    if (n >= KUOTA_CT_SIM) return false;
+    ctUsed.set(ct, n + 1);
+    return true;
+  };
 
-    const mine: Filler[] = [];
-    for (const [from, to] of FULL[mesin]) {
-      for (let k = from; k < to; k++) {
-        const active = mine.filter((f) => f.start <= k && k < f.start + f.len);
-        let total = occ[k] + active.length;
-        // Kelebihan karena pasien bernama: akhiri lebih awal pasien pengisi yang sudah berjalan
-        for (const f of active.filter((f) => f.start < k)) {
-          if (total <= kuota) break;
-          f.len = k - f.start;
-          f.total = f.done + f.len;
-          total--;
-        }
-        while (total < kuota) {
-          if (k === 0) {
-            // Sedang penyinaran: sudah diberikan `done` fraksi sampai kemarin
-            const t = course();
-            const len = 1 + Math.floor(rnd() * (t - 1));
-            mine.push({ mesin, start: 0, len, total: t, done: t - len, verif: "", ct: "" });
-          } else {
-            const sched = ctFor(days[k]);
-            if (!sched) break; // tidak ada tanggal CT Sim yang jatuh tepat di sini, isi di hari berikutnya
-            const t = course();
-            mine.push({ mesin, start: k, len: t, total: t, done: 0, verif: days[k], ct: sched });
-          }
-          total++;
-        }
-      }
+  const occ = Object.fromEntries(MESIN_EKSTERNAL.map((m) => [m, new Array<number>(horizon).fill(0)]));
+  for (const s of named) {
+    for (const d of projectedDays(s, today)) {
+      const k = indexOf.get(d);
+      if (k !== undefined && occ[s.mesin]) occ[s.mesin][k]++;
     }
-    fillers.push(...mine);
   }
+  const byMesin = Object.fromEntries(MESIN_EKSTERNAL.map((m) => [m, [] as Filler[]]));
+
+  /** Pasien yang sedang penyinaran: sudah diberikan `done` fraksi sampai kemarin (CT Sim-nya di masa lalu) */
+  const running = (mesin: string): Filler | null => {
+    for (let attempt = 0; attempt < 20; attempt++) {
+      const t = course();
+      const len = 1 + Math.floor(rnd() * (t - 1));
+      const done = t - len;
+      const absentAfter = rnd() < 0.1 && done > 3 ? 2 : undefined;
+      const verif = pastFractions(prevWorkingDay(today), done, absentAfter).fractionDates[0];
+      const ct = ctFor(verif) ?? minusWorkdays(verif, 10);
+      if (takeCt(ct)) return { mesin, start: 0, len, total: t, done, verif, ct, absentAfter };
+    }
+    return null;
+  };
+
+  // Hari demi hari, ketiga pesawat bergiliran supaya kuota CT Sim terbagi rata
+  for (let k = 0; k < horizon; k++) {
+    const order = MESIN_EKSTERNAL.map((_, j) => MESIN_EKSTERNAL[(j + k) % MESIN_EKSTERNAL.length]);
+    for (const mesin of order) {
+      if (!FULL[mesin].some(([from, to]) => from <= k && k < to)) continue;
+      const kuota = KUOTA_PESAWAT[mesin];
+      const mine = byMesin[mesin];
+      const active = mine.filter((f) => f.start <= k && k < f.start + f.len);
+      let total = occ[mesin][k] + active.length;
+      // Kelebihan karena pasien bernama: akhiri lebih awal pasien pengisi yang sudah berjalan
+      for (const f of active.filter((f) => f.start < k)) {
+        if (total <= kuota) break;
+        f.len = k - f.start;
+        f.total = f.done + f.len;
+        total--;
+      }
+      while (total < kuota) {
+        let f: Filler | null;
+        if (k === 0) {
+          f = running(mesin);
+        } else {
+          // Tanggal CT Sim yang jatuh tepat di sini, bila kuota CT Sim-nya masih ada
+          const ct = ctFor(days[k]);
+          const t = ct && takeCt(ct) ? course() : 0;
+          f = t ? { mesin, start: k, len: t, total: t, done: 0, verif: days[k], ct: ct! } : null;
+        }
+        if (!f) break; // isi di hari berikutnya
+        mine.push(f);
+        total++;
+      }
+    }
+  }
+  const fillers = MESIN_EKSTERNAL.flatMap((m) => byMesin[m]);
 
   const firstNames = { L: NAMA_L, P: NAMA_P };
   const lastNames = { L: NAMA_BELAKANG_L, P: NAMA_BELAKANG_P };
@@ -367,15 +411,14 @@ function fillerSpecs(named: Spec[], today: string): Spec[] {
       dpjp: i % 2 ? "dokter2" : "dokter",
     };
     if (f.start === 0) {
-      const { fractionDates, absentDates } = pastFractions(prevWorkingDay(today), f.done, rnd() < 0.1 && f.done > 3 ? 2 : undefined);
-      const verif = fractionDates[0];
+      const { fractionDates, absentDates } = pastFractions(prevWorkingDay(today), f.done, f.absentAfter);
       return {
         ...identity,
         stage: "PENYINARAN",
         fractionDates,
         absentDates,
-        verif,
-        ct: ctFor(verif) ?? minusWorkdays(verif, 10),
+        verif: f.verif,
+        ct: f.ct,
         poliByPerawat: rnd() < 0.2,
       };
     }
@@ -484,7 +527,8 @@ function toRecord(p: Spec, i: number, ids: Record<DemoKey, string>, today: strin
   const lastFraction = p.fractionDates.at(-1);
   if (p.replan && lastFraction) {
     n = 3;
-    entered = at(nextWorkingDay(lastFraction));
+    // Dikembalikan hari ini (di akhir pekan hari kerja berikutnya masih di masa depan)
+    entered = at(notAfterToday(nextWorkingDay(lastFraction)));
     events.push({ from_stage: "PENYINARAN", to_stage: p.stage, action: "return", actor_id: ids.rtt, actor_role: "rtt", note: "Tumor tampak membesar pada CBCT, plan perlu dibuat ulang (replanning).", created_at: entered });
   }
   if (p.stage === "SELESAI" && lastFraction) {

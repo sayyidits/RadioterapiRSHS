@@ -1,23 +1,21 @@
 "use client";
 
 import { useState } from "react";
-import { ctSimOptions, type CtSimOption, type Hunian } from "@/lib/booking";
+import { JUMLAH_PILIHAN_CT, ctSimOptions, type CtSimOption, type Hunian } from "@/lib/booking";
 import { formatDayDate, formatShortDate } from "@/lib/format";
 import { HARI_LIBUR, addDays } from "@/lib/holidays";
-import { kuotaOf } from "@/lib/workflow";
-
-/** Jumlah kandidat tanggal CT Sim yang ditampilkan (hari kerja, ±8 minggu) */
-const JUMLAH_PILIHAN = 40;
+import { KUOTA_CT_SIM, kuotaOf } from "@/lib/workflow";
 
 /**
- * Pemilih tanggal CT Sim di Poli. Tanggal hanya bisa dipilih bila setiap hari penyinaran
- * (mulai verifikasi = CT + 14 hari) masih ada kuota di pesawat yang dipilih.
- * Database mengecek ulang saat ACC.
+ * Pemilih tanggal CT Sim di Poli. Tanggal hanya bisa dipilih bila kuota CT Simulator hari itu
+ * belum penuh dan setiap hari penyinaran (mulai verifikasi = CT + 14 hari) masih ada kuota di
+ * pesawat yang dipilih. Database mengecek ulang saat ACC.
  */
 export function CtSimPicker({
   id,
   name,
   hunian,
+  ctSim,
   today,
   mesin,
   jumlahFraksi,
@@ -25,6 +23,8 @@ export function CtSimPicker({
   id: string;
   name: string;
   hunian: Hunian;
+  /** Pasien yang sudah dijadwalkan CT Sim per tanggal */
+  ctSim: Record<string, number>;
   today: string;
   mesin: string;
   /** Sisa fraksi yang akan diberikan (total − sudah diberikan) */
@@ -41,21 +41,21 @@ export function CtSimPicker({
     );
   }
 
-  const options = ctSimOptions({ hunian, mesin, jumlahFraksi, dari: today, jumlah: JUMLAH_PILIHAN });
+  const options = ctSimOptions({ hunian, ctSim, mesin, jumlahFraksi, dari: today, jumlah: JUMLAH_PILIHAN_CT });
   const byDate = new Map(options.map((o) => [o.ct, o]));
   // Pilihan yang menjadi penuh setelah pesawat/fraksi diganti otomatis batal
-  const chosen = byDate.get(selected)?.tersedia ? byDate.get(selected)! : null;
+  const chosen = byDate.get(selected)?.bisa ? byDate.get(selected)! : null;
   const kuota = kuotaOf(mesin);
   const weeks = groupByWeek(options[0].ct, options.at(-1)!.ct);
-  const available = options.filter((o) => o.tersedia).length;
+  const available = options.filter((o) => o.bisa).length;
 
   return (
     <div id={id} className="space-y-3">
       <input type="hidden" name={name} value={chosen?.ct ?? ""} />
       <p className="text-xs text-slate-500">
-        {kuota
-          ? `Kuota ${mesin}: ${kuota} pasien/hari. Tanggal dicoret berarti ada hari penyinaran yang kuotanya sudah penuh.`
-          : `${mesin} tanpa kuota harian.`}{" "}
+        {kuota ? `Kuota ${mesin}: ${kuota} pasien/hari.` : `${mesin} tanpa kuota harian.`} Kuota CT Simulator: {KUOTA_CT_SIM}{" "}
+        pasien/hari. Tanggal dicoret berarti CT Sim hari itu sudah penuh
+        {kuota ? " atau ada hari penyinaran yang kuota pesawatnya sudah penuh" : ""}.{" "}
         {available === 0 && <b className="text-rose-700">Tidak ada tanggal tersedia dalam 8 minggu ke depan.</b>}
       </p>
 
@@ -77,6 +77,7 @@ export function CtSimPicker({
                   <td key={date} className="align-top">
                     <DayCell
                       date={date}
+                      mesin={mesin}
                       option={byDate.get(date)}
                       selected={chosen?.ct === date}
                       onSelect={() => setSelected(date)}
@@ -108,11 +109,13 @@ export function CtSimPicker({
 
 function DayCell({
   date,
+  mesin,
   option,
   selected,
   onSelect,
 }: {
   date: string;
+  mesin: string;
   option: CtSimOption | undefined;
   selected: boolean;
   onSelect: () => void;
@@ -126,16 +129,21 @@ function DayCell({
       </div>
     );
   }
-  if (!option.tersedia) {
+  if (!option.bisa) {
+    const ctPenuh = option.ctSisa === 0;
+    const reasons = [
+      ctPenuh && `CT Simulator sudah ${KUOTA_CT_SIM} pasien`,
+      !option.tersedia && `Pesawat penuh pada ${formatDayDate(option.penuhPada!)} (${option.hariPenuh} hari penuh)`,
+    ].filter(Boolean);
     return (
       <button
         type="button"
         disabled
-        title={`Penuh pada ${formatDayDate(option.penuhPada!)} (${option.hariPenuh} hari penuh)`}
+        title={reasons.join(". ")}
         className="w-full cursor-not-allowed rounded-md bg-slate-100 px-2 py-1.5 text-left text-slate-400"
       >
         <p className="font-medium line-through">{formatShortDate(date)}</p>
-        <p>Penuh</p>
+        <p>{ctPenuh && option.tersedia ? "CT Sim penuh" : "Penuh"}</p>
       </button>
     );
   }
@@ -153,9 +161,12 @@ function DayCell({
       <p className={selected ? "text-teal-100" : "text-slate-500"}>Verif {formatShortDate(option.verifikasi)}</p>
       {option.sisaMin != null && (
         <p className={selected ? "text-teal-100" : option.sisaMin <= 5 ? "text-amber-700" : "text-slate-400"}>
-          sisa {option.sisaMin}
+          {mesin} sisa {option.sisaMin}
         </p>
       )}
+      <p className={selected ? "text-teal-100" : option.ctSisa <= 2 ? "text-amber-700" : "text-slate-400"}>
+        CT sisa {option.ctSisa}
+      </p>
     </button>
   );
 }

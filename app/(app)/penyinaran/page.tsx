@@ -1,9 +1,11 @@
 import Link from "next/link";
 import { AttendanceControl } from "@/components/attendance-control";
 import { FractionForm } from "@/components/fraction-form";
+import { ProgressBar } from "@/components/progress-bar";
+import { StatCards } from "@/components/stat-cards";
 import { getCurrentUser } from "@/lib/auth";
-import { attendanceToday, fractionCounts, fractionsToday, listPatients } from "@/lib/data";
-import { formatToday } from "@/lib/format";
+import { attendanceToday, fractionCounts, listPatients } from "@/lib/data";
+import { formatToday, todayISO } from "@/lib/format";
 import type { AttendanceEntry, Patient } from "@/lib/types";
 import { MESIN } from "@/lib/workflow";
 
@@ -14,7 +16,11 @@ import { MESIN } from "@/lib/workflow";
 export default async function TreatmentTodayPage() {
   const [user, patients] = await Promise.all([getCurrentUser(), listPatients({ stage: "PENYINARAN" })]);
   const ids = patients.map((p) => p.id);
-  const [done, attendance, today] = await Promise.all([fractionCounts(ids), attendanceToday(ids), fractionsToday(ids)]);
+  const [done, attendance, countToday] = await Promise.all([
+    fractionCounts(ids),
+    attendanceToday(ids),
+    fractionCounts(ids, todayISO()),
+  ]);
 
   const canAttend = user.role === "administrasi" || user.role === "rtt";
   const canRecord = user.role === "rtt";
@@ -22,11 +28,12 @@ export default async function TreatmentTodayPage() {
   const status = (p: Patient) => attendance[p.id]?.at(-1)?.hadir;
   const hadir = patients.filter((p) => status(p) === true).length;
   const tidak = patients.filter((p) => status(p) === false).length;
+  const belum = patients.length - hadir - tidak;
   const stats = [
     { label: "Pasien penyinaran", value: patients.length },
     { label: "Hadir", value: hadir },
     { label: "Tidak hadir", value: tidak },
-    { label: "Belum diabsen", value: patients.length - hadir - tidak, highlight: canAttend && patients.length - hadir - tidak > 0 },
+    { label: "Belum diabsen", value: belum, highlight: canAttend && belum > 0 },
   ];
 
   // RTT melihat yang hadir lebih dulu, administrasi yang belum diabsen lebih dulu
@@ -56,14 +63,7 @@ export default async function TreatmentTodayPage() {
         </p>
       </div>
 
-      <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">
-        {stats.map((s) => (
-          <div key={s.label} className={`card p-4 ${s.highlight ? "border-teal-300 bg-teal-50" : ""}`}>
-            <p className="text-xs font-medium text-slate-500">{s.label}</p>
-            <p className={`mt-1 text-2xl font-semibold ${s.highlight ? "text-teal-800" : ""}`}>{s.value}</p>
-          </div>
-        ))}
-      </div>
+      <StatCards stats={stats} />
 
       {groups.length === 0 && (
         <p className="card px-5 py-10 text-center text-sm text-slate-500">Tidak ada pasien yang sedang penyinaran.</p>
@@ -84,7 +84,7 @@ export default async function TreatmentTodayPage() {
                 patient={p}
                 done={done[p.id] ?? 0}
                 entries={attendance[p.id] ?? []}
-                todayCount={today[p.id] ?? 0}
+                todayCount={countToday[p.id] ?? 0}
                 canAttend={canAttend}
                 canRecord={canRecord}
               />
@@ -126,9 +126,7 @@ function PatientRow({
             Fraksi {done}/{total}
             {todayCount > 0 && <span className="text-teal-700"> · {todayCount} hari ini</span>}
           </p>
-          <div className="mt-1 h-1.5 overflow-hidden rounded-full bg-slate-100">
-            <div className="h-full rounded-full bg-sky-300" style={{ width: `${total ? (done / total) * 100 : 0}%` }} />
-          </div>
+          <ProgressBar value={done} max={total} label={`${done} dari ${total} fraksi`} className="mt-1 h-1.5" />
         </div>
       </div>
 

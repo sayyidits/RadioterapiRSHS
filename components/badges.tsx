@@ -10,6 +10,11 @@ export function StageBadge({ stage, className = "" }: { stage: StageKey; classNa
   );
 }
 
+/** Jumlah item di samping judul bagian */
+export function CountPill({ n, className = "" }: { n: number; className?: string }) {
+  return <span className={`rounded-full bg-slate-100 px-2 py-0.5 text-xs font-semibold text-slate-700 ${className}`}>{n}</span>;
+}
+
 export function RoleBadge({ role }: { role: Role }) {
   return (
     <span className="inline-flex items-center whitespace-nowrap rounded-full bg-teal-50 px-2.5 py-0.5 text-xs font-medium text-teal-800 ring-1 ring-inset ring-teal-200">

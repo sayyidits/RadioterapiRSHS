@@ -22,7 +22,8 @@ export async function PatientList({
 
   const user = await getCurrentUser();
   const patients = await listPatients({ q, stage, dpjp: onlyMine ? user.id : undefined });
-  const fractions = await fractionCounts(patients.map((p) => p.id));
+  // Kolom Fraksi hanya terisi untuk pasien yang sedang penyinaran
+  const fractions = await fractionCounts(patients.filter((p) => p.current_stage === "PENYINARAN").map((p) => p.id));
 
   return (
     <div className="space-y-5">

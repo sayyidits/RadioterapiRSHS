@@ -31,19 +31,20 @@ function readPayload(fields: FieldDef[], formData: FormData) {
   return { payload };
 }
 
-function refresh(patientId?: string) {
-  revalidatePath("/");
-  revalidatePath("/pasien");
-  revalidatePath("/pasien/saya");
-  revalidatePath("/penyinaran");
-  revalidatePath("/pesawat");
-  if (patientId) revalidatePath(`/pasien/${patientId}`);
+/** Isian teks opsional: kosong = null */
+function optional(formData: FormData, name: string) {
+  return String(formData.get(name) ?? "").trim() || null;
+}
+
+/** Setiap perubahan bisa tampil di semua halaman (dashboard, daftar, penyinaran, info pesawat, pasien) */
+function refresh() {
+  revalidatePath("/", "layout");
 }
 
 export async function createPatientAction(_prev: ActionState, formData: FormData): Promise<ActionState> {
   const { payload, error } = readPayload(PATIENT_IDENTITY_FIELDS, formData);
   if (error || !payload) return { error };
-  const dpjp = String(formData.get("dpjp") ?? "");
+  const dpjp = optional(formData, "dpjp");
   if (!dpjp) return { error: "Dokter DPJP wajib dipilih" };
 
   const { data, error: rpcError } = await rpc<string>("create_patient", {
@@ -54,7 +55,7 @@ export async function createPatientAction(_prev: ActionState, formData: FormData
     p_no_hp: payload.no_hp ?? null,
     p_diagnosis: payload.diagnosis,
     p_dpjp: dpjp,
-    p_note: String(formData.get("note") ?? "").trim() || null,
+    p_note: optional(formData, "note"),
   });
   if (rpcError) return { error: rpcError.message };
 
@@ -77,24 +78,24 @@ export async function advanceAction(patientId: string, _prev: ActionState, formD
   const { error: rpcError } = await rpc("advance_stage", {
     p_patient: patientId,
     p_payload: payload,
-    p_note: String(formData.get("note") ?? "").trim() || null,
+    p_note: optional(formData, "note"),
   });
   if (rpcError) return { error: rpcError.message };
 
-  refresh(patientId);
+  refresh();
   return { success: "Tersimpan. Pasien dipindahkan ke tahap berikutnya." };
 }
 
 export async function returnAction(patientId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
   const target = formData.get("target");
-  const note = String(formData.get("note") ?? "").trim();
+  const note = optional(formData, "note");
   if (!isStageKey(target)) return { error: "Pilih tahap tujuan" };
   if (!note) return { error: "Alasan pengembalian wajib diisi" };
 
   const { error } = await rpc("return_stage", { p_patient: patientId, p_target: target, p_note: note });
   if (error) return { error: error.message };
 
-  refresh(patientId);
+  refresh();
   return { success: `Pasien dikembalikan ke ${STAGE_MAP[target].label}.` };
 }
 
@@ -102,12 +103,12 @@ export async function returnAction(patientId: string, _prev: ActionState, formDa
 export async function recordFractionAction(patientId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
   const { data, error } = await rpc<number>("record_fraction", {
     p_patient: patientId,
-    p_mesin: String(formData.get("mesin") ?? "").trim() || null,
-    p_catatan: String(formData.get("catatan") ?? "").trim() || null,
+    p_mesin: optional(formData, "mesin"),
+    p_catatan: optional(formData, "catatan"),
   });
   if (error) return { error: error.message };
 
-  refresh(patientId);
+  refresh();
   return { success: `Fraksi ke-${data} tercatat.` };
 }
 
@@ -118,11 +119,11 @@ export async function setAttendanceAction(patientId: string, _prev: ActionState,
   const { error } = await rpc("set_attendance", {
     p_patient: patientId,
     p_hadir: hadir === "true",
-    p_catatan: String(formData.get("catatan") ?? "").trim() || null,
+    p_catatan: optional(formData, "catatan"),
   });
   if (error) return { error: error.message };
 
-  refresh(patientId);
+  refresh();
   return { success: hadir === "true" ? "Tercatat hadir." : "Tercatat tidak hadir." };
 }
 
@@ -130,10 +131,10 @@ export async function setAttendanceAction(patientId: string, _prev: ActionState,
 export async function reRegisterPoliAction(patientId: string, _prev: ActionState, formData: FormData): Promise<ActionState> {
   const { error } = await rpc("daftar_ulang_poli", {
     p_patient: patientId,
-    p_note: String(formData.get("note") ?? "").trim() || null,
+    p_note: optional(formData, "note"),
   });
   if (error) return { error: error.message };
 
-  refresh(patientId);
+  refresh();
   return { success: "Pasien didaftarkan ulang ke Poli untuk hari ini." };
 }

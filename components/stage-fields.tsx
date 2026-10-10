@@ -5,6 +5,8 @@ import { JENIS_KELAMIN, type FieldDef } from "@/lib/workflow";
 /** Data untuk field "ctsim": hunian pesawat dan isian form yang sedang diketik */
 export type BookingInput = {
   hunian: Hunian;
+  /** Pasien yang sudah dijadwalkan CT Sim per tanggal */
+  ctSim: Record<string, number>;
   today: string;
   mesin: string;
   /** Sisa fraksi (jumlah fraksi − fraksi yang sudah diberikan) */
@@ -68,6 +70,7 @@ export function StageFields({
                       id={id}
                       name={f.name}
                       hunian={booking.hunian}
+                      ctSim={booking.ctSim}
                       today={booking.today}
                       mesin={booking.mesin}
                       jumlahFraksi={booking.jumlahFraksi}

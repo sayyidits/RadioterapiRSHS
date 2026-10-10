@@ -11,10 +11,11 @@ import { ReturnForm } from "@/components/return-form";
 import { StageActionPanel } from "@/components/stage-action-panel";
 import { StageStepper } from "@/components/stage-stepper";
 import { getCurrentUser } from "@/lib/auth";
-import { cekKuota, type Hunian } from "@/lib/booking";
-import { attendanceDays, attendanceToday, fractionsToday, getPatient, hunianPesawat } from "@/lib/data";
+import { JUMLAH_PILIHAN_CT, cekKuota, type Hunian } from "@/lib/booking";
+import { ProgressBar } from "@/components/progress-bar";
+import { attendanceDays, attendanceToday, fractionCounts, getPatient, hunianPesawat, jumlahCtSim } from "@/lib/data";
 import { age, dateWIB, formatDate, formatDateTime, todayISO } from "@/lib/format";
-import { addDays, workingDayFrom } from "@/lib/holidays";
+import { addDays, workingDayFrom, workingDaysFrom } from "@/lib/holidays";
 import { buildSchedule, type ScheduleRow } from "@/lib/schedule";
 import type { AttendanceEntry, Fraction, Patient, Profile } from "@/lib/types";
 import {
@@ -39,37 +40,39 @@ export default async function PatientPage({ params }: PageProps<"/pasien/[id]">)
   const { patient, events, fractions } = result;
   const stage = STAGE_MAP[patient.current_stage];
   const isOwner = canActOn(patient, user);
-  const todayStr = todayISO();
+  const today = todayISO();
   // Kunjungan Poli yang tidak di-ACC di harinya
-  const hangus = poliHangus(patient, todayStr);
+  const hangus = poliHangus(patient, today);
   // Due date ditampilkan di samping nama tahap Delineasi & Planning
-  const due = patient.current_stage === "DELINEASI" || patient.current_stage === "PLANNING" ? dueDate(patient, todayStr) : null;
+  const due = patient.current_stage === "DELINEASI" || patient.current_stage === "PLANNING" ? dueDate(patient, today) : null;
   const inTreatment = patient.current_stage === "PENYINARAN";
-  // Absensi hanya relevan saat penyinaran (daftar id kosong = tanpa query)
-  const ids = inTreatment ? [patient.id] : [];
-  const [attendance, today] = await Promise.all([attendanceToday(ids), fractionsToday(ids)]);
-  const attendanceEntries = attendance[patient.id] ?? [];
-  const todayCount = today[patient.id] ?? 0;
-  // Jadwal fraksi muncul setelah fraksi pertama diberikan; proyeksi hanya saat penyinaran berjalan
-  const schedule =
-    fractions.length > 0
-      ? buildSchedule({
-          fractions,
-          total: patient.total_fraksi ?? fractions.length,
-          attendance: await attendanceDays(patient.id),
-          today: todayISO(),
-          project: inTreatment,
-        })
-      : [];
-  // Poli memesan slot pesawat (tanggal CT Sim), Planning boleh mengganti pesawat yang masih ada kuotanya.
-  // Hunian dihitung tanpa pasien ini sendiri.
+  // Poli memesan slot pesawat (tanggal CT Sim), Planning boleh mengganti pesawat yang masih ada kuotanya
   const needsHunian = isOwner && (patient.current_stage === "POLI" || patient.current_stage === "PLANNING");
-  const hunian = needsHunian ? await hunianPesawat(todayStr, addDays(todayStr, 200), patient.id) : null;
-  const booking =
-    hunian && patient.current_stage === "POLI" ? { hunian, today: todayStr, fraksiDone: fractions.length } : undefined;
+
+  // Absensi hanya relevan saat penyinaran (daftar id kosong = tanpa query). Hunian dihitung tanpa pasien ini sendiri.
+  const ids = inTreatment ? [patient.id] : [];
+  const booksCtSim = isOwner && patient.current_stage === "POLI";
+  const [attendance, countToday, days, hunian, ctSim] = await Promise.all([
+    attendanceToday(ids),
+    fractionCounts(ids, today),
+    fractions.length > 0 ? attendanceDays(patient.id) : [],
+    needsHunian ? hunianPesawat(today, addDays(today, 200), patient.id) : null,
+    booksCtSim ? jumlahCtSim(today, workingDaysFrom(today, JUMLAH_PILIHAN_CT).at(-1)!, patient.id) : {},
+  ]);
+  const attendanceEntries = attendance[patient.id] ?? [];
+  const todayCount = countToday[patient.id] ?? 0;
+  // Jadwal fraksi muncul setelah fraksi pertama diberikan; proyeksi hanya saat penyinaran berjalan
+  const schedule = buildSchedule({
+    fractions,
+    total: patient.total_fraksi ?? fractions.length,
+    attendance: days,
+    today,
+    project: inTreatment,
+  });
+  const booking = hunian && booksCtSim ? { hunian, ctSim, today, fraksiDone: fractions.length } : undefined;
   const optionLabels =
     hunian && patient.current_stage === "PLANNING"
-      ? { mesin: machineOptionLabels(hunian, patient, fractions.length, todayStr) }
+      ? { mesin: machineOptionLabels(hunian, patient, fractions.length, today) }
       : undefined;
 
   return (
@@ -96,7 +99,7 @@ export default async function PatientPage({ params }: PageProps<"/pasien/[id]">)
                     Tahap saat ini: {stage.label}
                     {due && (
                       <span className="flex items-center gap-1.5 text-xs font-normal text-slate-500">
-                        Due date <DueBadge due={due} today={todayStr} />
+                        Due date <DueBadge due={due} today={today} />
                       </span>
                     )}
                   </h2>
@@ -222,9 +225,7 @@ function FractionProgress({ done, total }: { done: number; total: number }) {
           {done}/{total} fraksi ({pct}%)
         </span>
       </div>
-      <div className="h-2.5 overflow-hidden rounded-full bg-slate-100">
-        <div className="h-full rounded-full bg-teal-600" style={{ width: `${pct}%` }} />
-      </div>
+      <ProgressBar value={done} max={total} label="Progress penyinaran" className="h-2.5" barClassName="bg-teal-600" />
     </div>
   );
 }

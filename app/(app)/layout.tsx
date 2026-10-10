@@ -6,6 +6,7 @@ import { RoleSwitcher } from "@/components/demo-controls";
 import { getCurrentUser } from "@/lib/auth";
 import { DEMO_USERS } from "@/lib/demo-seed";
 import { IS_DEMO } from "@/lib/mode";
+import { AKSES, kelolaAkun } from "@/lib/workflow";
 import { signOut } from "../login/actions";
 
 export default async function AppLayout({ children }: LayoutProps<"/">) {
@@ -24,6 +25,7 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
     ...(user.role === "administrasi" ? [{ href: "/penyinaran", label: "Absen Penyinaran" }] : []),
     ...(user.role === "rtt" ? [{ href: "/penyinaran", label: "Penyinaran Hari Ini" }] : []),
     ...(user.role === "administrasi" ? [{ href: "/pasien/baru", label: "+ Pasien Baru" }] : []),
+    ...(kelolaAkun(user.akses) ? [{ href: "/akun", label: "Akun" }] : []),
   ];
 
   return (
@@ -40,7 +42,10 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
           <div className="ml-auto flex items-center gap-3">
             <div className="hidden text-right sm:block">
               <p className="text-sm font-medium leading-tight">{user.full_name}</p>
-              <p className="text-xs text-slate-500">{IS_DEMO ? "Mode demo" : user.email}</p>
+              <p className="text-xs text-slate-500">
+                {IS_DEMO ? "Mode demo" : user.email}
+                {user.akses !== "nakes" && <> · {AKSES[user.akses]}</>}
+              </p>
             </div>
             {IS_DEMO ? (
               <RoleSwitcher users={DEMO_USERS} currentId={user.id} />

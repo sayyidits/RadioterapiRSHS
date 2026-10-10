@@ -15,6 +15,8 @@ export const ROLES = {
 
 export type Role = keyof typeof ROLES;
 
+export const ROLE_LIST = Object.keys(ROLES) as Role[];
+
 export const ROLE_SHORT: Record<Role, string> = {
   dokter: "Dokter",
   perawat: "Perawat",
@@ -22,6 +24,37 @@ export const ROLE_SHORT: Record<Role, string> = {
   fismed: "Fismed",
   administrasi: "Administrasi",
 };
+
+/**
+ * Hak akses pengelolaan akun, terpisah dari role kerja (sama dengan akses_akun di
+ * 0009_hak_akses.sql). Nakes: tidak mengelola akun. Admin: mengelola akun Nakes.
+ * Master: mengelola semua akun, termasuk memberi hak Admin/Master.
+ */
+export const AKSES = { nakes: "Nakes", admin: "Admin", master: "Master" } as const;
+
+export type Akses = keyof typeof AKSES;
+
+const AKSES_RANK: Record<Akses, number> = { nakes: 0, admin: 1, master: 2 };
+
+/** Boleh mengelola akun (halaman Akun) */
+export function kelolaAkun(akses: Akses) {
+  return akses !== "nakes";
+}
+
+/**
+ * Apa yang boleh dilakukan `saya` pada akun `target` (sama dengan atur_akun di SQL).
+ * Akun sendiri: hanya role kerja. Admin: hanya akun Nakes, tanpa memberi hak akses.
+ */
+export function hakAtas(saya: { id: string; akses: Akses }, target: { id: string; akses: Akses }) {
+  const sendiri = saya.id === target.id;
+  if (!kelolaAkun(saya.akses)) return { kelola: false, aksesBisaDiubah: false, sendiri };
+  if (sendiri) return { kelola: true, aksesBisaDiubah: false, sendiri };
+  return {
+    kelola: saya.akses === "master" || AKSES_RANK[target.akses] < AKSES_RANK[saya.akses],
+    aksesBisaDiubah: saya.akses === "master",
+    sendiri,
+  };
+}
 
 export const STAGE_KEYS = [
   "PENDAFTARAN",
@@ -75,6 +108,12 @@ export const MESIN_EKSTERNAL = ["Synergy", "Precise", "Cobalt"];
  * Mutlak saat memilih tanggal CT Sim di Poli. Brakiterapi tanpa kuota.
  */
 export const KUOTA_PESAWAT: Record<string, number> = { Synergy: 65, Precise: 65, Cobalt: 30 };
+
+/**
+ * Kuota pasien CT Simulator per hari, untuk semua pesawat (sama dengan kuota_ct_sim() di
+ * 0006_kuota_ct_sim.sql). Mutlak saat memilih tanggal CT Sim di Poli.
+ */
+export const KUOTA_CT_SIM = 7;
 
 export function kuotaOf(mesin: string | null | undefined): number | null {
   return (mesin && KUOTA_PESAWAT[mesin]) || null;

@@ -6,7 +6,7 @@ import { createClient } from "./supabase/server";
 import { todayISO } from "./format";
 import type { Hunian } from "./booking";
 import type { AttendanceDay } from "./schedule";
-import type { AttendanceEntry, Fraction, Patient, Profile, StageEvent } from "./types";
+import type { Akun, AttendanceEntry, Fraction, Patient, Profile, StageEvent } from "./types";
 import type { StageKey } from "./workflow";
 
 const BASE_COLUMNS =
@@ -23,6 +23,25 @@ async function demo<T>(fn: Parameters<typeof asUser<T>>[1]) {
   return asUser(uid, fn);
 }
 
+/** Batas baris per respons PostgREST (pengaturan bawaan Supabase "Max rows") */
+const PAGE = 1000;
+
+/**
+ * Supabase memotong respons di 1000 baris tanpa error, jadi query yang bisa lebih panjang
+ * diambil per halaman sampai habis. Query harus berurutan stabil (order sampai ke kolom unik).
+ */
+async function fetchAll<T>(
+  page: (from: number, to: number) => PromiseLike<{ data: unknown[] | null; error: { message: string } | null }>,
+) {
+  const rows: T[] = [];
+  for (let from = 0; ; from += PAGE) {
+    const { data, error } = await page(from, from + PAGE - 1);
+    if (error) throw new Error(error.message);
+    rows.push(...((data ?? []) as T[]));
+    if (!data || data.length < PAGE) return rows;
+  }
+}
+
 export async function listPatients(opts: { q?: string; stage?: StageKey; dpjp?: string } = {}) {
   const q = opts.q?.replace(/[%,()]/g, " ").trim();
 
@@ -34,20 +53,20 @@ export async function listPatients(opts: { q?: string; stage?: StageKey; dpjp?: 
          where ($1::public.stage is null or current_stage = $1::public.stage)
            and ($2::text is null or nama ilike '%' || $2 || '%' or no_rm ilike '%' || $2 || '%')
            and ($3::uuid is null or dpjp_id = $3::uuid)
-         order by stage_entered_at`,
+         order by stage_entered_at, id`,
         [opts.stage ?? null, q || null, opts.dpjp ?? null],
       ),
     );
   }
 
   const supabase = await createClient();
-  let query = supabase.from("patients").select(PATIENT_COLUMNS).order("stage_entered_at", { ascending: true });
-  if (opts.stage) query = query.eq("current_stage", opts.stage);
-  if (opts.dpjp) query = query.eq("dpjp_id", opts.dpjp);
-  if (q) query = query.or(`nama.ilike.%${q}%,no_rm.ilike.%${q}%`);
-  const { data, error } = await query;
-  if (error) throw new Error(error.message);
-  return (data ?? []) as unknown as Patient[];
+  return fetchAll<Patient>((from, to) => {
+    let query = supabase.from("patients").select(PATIENT_COLUMNS).order("stage_entered_at").order("id").range(from, to);
+    if (opts.stage) query = query.eq("current_stage", opts.stage);
+    if (opts.dpjp) query = query.eq("dpjp_id", opts.dpjp);
+    if (q) query = query.or(`nama.ilike.%${q}%,no_rm.ilike.%${q}%`);
+    return query;
+  });
 }
 
 export async function getPatient(id: string) {
@@ -107,12 +126,16 @@ export async function getPatientStage(id: string): Promise<StageKey | null> {
     return rows[0]?.current_stage ?? null;
   }
   const supabase = await createClient();
-  const { data } = await supabase.from("patients").select("current_stage").eq("id", id).maybeSingle();
+  const { data, error } = await supabase.from("patients").select("current_stage").eq("id", id).maybeSingle();
+  if (error) throw new Error(error.message);
   return (data?.current_stage as StageKey) ?? null;
 }
 
-/** Jumlah fraksi yang sudah tercatat untuk banyak pasien sekaligus. */
-export async function fractionCounts(patientIds: string[]) {
+/**
+ * Jumlah fraksi yang sudah tercatat per pasien, untuk banyak pasien sekaligus.
+ * `tanggal`: hanya fraksi di tanggal itu (mis. hari ini).
+ */
+export async function fractionCounts(patientIds: string[], tanggal?: string) {
   const counts: Record<string, number> = {};
   if (patientIds.length === 0) return counts;
 
@@ -120,8 +143,9 @@ export async function fractionCounts(patientIds: string[]) {
     const rows = await demo((tx) =>
       selectJson<{ patient_id: string; n: number }>(
         tx,
-        "select patient_id, count(*)::int as n from public.fractions where patient_id = any($1::uuid[]) group by patient_id",
-        [patientIds],
+        `select patient_id, count(*)::int as n from public.fractions
+         where patient_id = any($1::uuid[]) and ($2::date is null or tanggal = $2::date) group by patient_id`,
+        [patientIds, tanggal ?? null],
       ),
     );
     for (const r of rows) counts[r.patient_id] = r.n;
@@ -129,22 +153,46 @@ export async function fractionCounts(patientIds: string[]) {
   }
 
   const supabase = await createClient();
-  const { data } = await supabase.from("fractions").select("patient_id").in("patient_id", patientIds);
-  for (const row of data ?? []) counts[row.patient_id] = (counts[row.patient_id] ?? 0) + 1;
+  const rows = await fetchAll<{ patient_id: string }>((from, to) => {
+    let query = supabase.from("fractions").select("patient_id").in("patient_id", patientIds).order("id").range(from, to);
+    if (tanggal) query = query.eq("tanggal", tanggal);
+    return query;
+  });
+  for (const row of rows) counts[row.patient_id] = (counts[row.patient_id] ?? 0) + 1;
   return counts;
 }
 
-/** Semua akun dokter (pilihan DPJP saat pendaftaran). */
+/** Akun dokter yang aktif (pilihan DPJP saat pendaftaran). */
 export async function listDoctors() {
   if (IS_DEMO) {
     return demo((tx) =>
-      selectJson<Profile>(tx, "select id, full_name, role from public.profiles where role = 'dokter' order by full_name"),
+      selectJson<Profile>(
+        tx,
+        "select id, full_name, role from public.profiles where role = 'dokter' and status = 'aktif' order by full_name",
+      ),
     );
   }
   const supabase = await createClient();
-  const { data, error } = await supabase.from("profiles").select("id, full_name, role").eq("role", "dokter").order("full_name");
+  const { data, error } = await supabase
+    .from("profiles")
+    .select("id, full_name, role")
+    .eq("role", "dokter")
+    .eq("status", "aktif")
+    .order("full_name");
   if (error) throw new Error(error.message);
   return (data ?? []) as Profile[];
+}
+
+/** Semua akun untuk halaman Akun (Admin/Master), terbaru lebih dulu. */
+export async function listAccounts() {
+  const columns = "id, full_name, email, role, akses, status, created_at, diproses_at";
+  if (IS_DEMO) {
+    return demo((tx) => selectJson<Akun>(tx, `select ${columns} from public.profiles order by created_at desc, id`));
+  }
+  const supabase = await createClient();
+  return fetchAll<Akun>((from, to) =>
+    supabase.from("profiles").select(columns).order("created_at", { ascending: false }).order("id").range(from, to),
+  );
 }
 
 /** Pencatatan kehadiran hari ini per pasien, urut dari yang paling awal (terakhir = status berlaku). */
@@ -167,42 +215,19 @@ export async function attendanceToday(patientIds: string[]) {
     );
   } else {
     const supabase = await createClient();
-    const { data, error } = await supabase
-      .from("attendance")
-      .select("id, patient_id, hadir, catatan, actor_role, created_at, actor:profiles(full_name)")
-      .in("patient_id", patientIds)
-      .eq("tanggal", todayISO())
-      .order("created_at", { ascending: true })
-      .order("id", { ascending: true });
-    if (error) throw new Error(error.message);
-    rows = (data ?? []) as unknown as AttendanceEntry[];
+    rows = await fetchAll<AttendanceEntry>((from, to) =>
+      supabase
+        .from("attendance")
+        .select("id, patient_id, hadir, catatan, actor_role, created_at, actor:profiles(full_name)")
+        .in("patient_id", patientIds)
+        .eq("tanggal", todayISO())
+        .order("created_at")
+        .order("id")
+        .range(from, to),
+    );
   }
   for (const r of rows) (byPatient[r.patient_id] ??= []).push(r);
   return byPatient;
-}
-
-/** Jumlah fraksi yang dicatat hari ini per pasien. */
-export async function fractionsToday(patientIds: string[]) {
-  const counts: Record<string, number> = {};
-  if (patientIds.length === 0) return counts;
-
-  if (IS_DEMO) {
-    const rows = await demo((tx) =>
-      selectJson<{ patient_id: string; n: number }>(
-        tx,
-        `select patient_id, count(*)::int as n from public.fractions
-         where patient_id = any($1::uuid[]) and tanggal = $2::date group by patient_id`,
-        [patientIds, todayISO()],
-      ),
-    );
-    for (const r of rows) counts[r.patient_id] = r.n;
-    return counts;
-  }
-
-  const supabase = await createClient();
-  const { data } = await supabase.from("fractions").select("patient_id").in("patient_id", patientIds).eq("tanggal", todayISO());
-  for (const row of data ?? []) counts[row.patient_id] = (counts[row.patient_id] ?? 0) + 1;
-  return counts;
 }
 
 /** Satu hari penyinaran seorang pasien (fraksi tercatat atau proyeksi), dari jadwal_sinar() */
@@ -216,9 +241,13 @@ export async function jadwalSinar(from: string, to: string, exclude?: string) {
     );
   }
   const supabase = await createClient();
-  const { data, error } = await supabase.rpc("jadwal_sinar", { p_from: from, p_to: to, p_exclude: exclude ?? null });
-  if (error) throw new Error(error.message);
-  return (data ?? []) as JadwalSinarRow[];
+  return fetchAll<JadwalSinarRow>((start, end) =>
+    supabase
+      .rpc("jadwal_sinar", { p_from: from, p_to: to, p_exclude: exclude ?? null })
+      .order("tanggal")
+      .order("patient_id")
+      .range(start, end),
+  );
 }
 
 /**
@@ -234,13 +263,34 @@ export async function hunianPesawat(from: string, to: string, exclude?: string):
     );
   } else {
     const supabase = await createClient();
-    const { data, error } = await supabase.rpc("hunian_pesawat", { p_from: from, p_to: to, p_exclude: exclude ?? null });
-    if (error) throw new Error(error.message);
-    rows = (data ?? []) as Row[];
+    rows = await fetchAll<Row>((start, end) =>
+      supabase
+        .rpc("hunian_pesawat", { p_from: from, p_to: to, p_exclude: exclude ?? null })
+        .order("tanggal")
+        .order("mesin")
+        .range(start, end),
+    );
   }
   const hunian: Hunian = {};
   for (const r of rows) (hunian[r.mesin] ??= {})[r.tanggal] = r.jumlah;
   return hunian;
+}
+
+/** Jumlah pasien yang dijadwalkan CT Sim per tanggal: { "2026-10-26": 7 }, dari jumlah_ct_sim(). */
+export async function jumlahCtSim(from: string, to: string, exclude?: string) {
+  type Row = { tanggal: string; jumlah: number };
+  let rows: Row[];
+  if (IS_DEMO) {
+    rows = await demo((tx) =>
+      selectJson<Row>(tx, "select * from public.jumlah_ct_sim($1, $2, $3)", [from, to, exclude ?? null]),
+    );
+  } else {
+    const supabase = await createClient();
+    const { data, error } = await supabase.rpc("jumlah_ct_sim", { p_from: from, p_to: to, p_exclude: exclude ?? null });
+    if (error) throw new Error(error.message);
+    rows = (data ?? []) as Row[];
+  }
+  return Object.fromEntries(rows.map((r) => [r.tanggal, r.jumlah])) as Record<string, number>;
 }
 
 /** Status kehadiran yang berlaku per tanggal untuk satu pasien (untuk jadwal fraksi). */

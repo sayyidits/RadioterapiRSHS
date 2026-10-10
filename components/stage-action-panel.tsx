@@ -21,8 +21,8 @@ export function StageActionPanel({
   stage: StageKey;
   defaults: Record<string, unknown>;
   optionLabels?: Record<string, Record<string, string>>;
-  /** Poli: hunian pesawat (tanpa pasien ini) dan fraksi yang sudah diberikan (replanning) */
-  booking?: { hunian: Hunian; today: string; fraksiDone: number };
+  /** Poli: hunian pesawat & jadwal CT Sim (tanpa pasien ini) dan fraksi yang sudah diberikan (replanning) */
+  booking?: { hunian: Hunian; ctSim: Record<string, number>; today: string; fraksiDone: number };
 }) {
   const def = STAGE_MAP[stage];
   // Pesawat & jumlah fraksi yang sedang diisi, untuk pemilih tanggal CT Sim
@@ -131,6 +131,7 @@ export function StageActionPanel({
             booking={
               booking && {
                 hunian: booking.hunian,
+                ctSim: booking.ctSim,
                 today: booking.today,
                 mesin: live.mesin,
                 jumlahFraksi: live.fraksi - booking.fraksiDone,

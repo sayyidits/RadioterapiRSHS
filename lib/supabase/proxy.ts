@@ -2,7 +2,8 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseEnv } from "./env";
 
-const PUBLIC_PATHS = ["/login"];
+// /auth/callback: kembali dari Google & tautan konfirmasi email, sesi belum ada
+const PUBLIC_PATHS = ["/login", "/auth"];
 
 export async function updateSession(request: NextRequest) {
   let response = NextResponse.next({ request });
@@ -36,7 +37,8 @@ export async function updateSession(request: NextRequest) {
     to.search = "";
     return redirectWithCookies(to, response);
   }
-  if (loggedIn && path === "/login") {
+  // /login?error=... (mis. akun tanpa profil dari getCurrentUser) tetap ditampilkan, supaya tidak redirect berputar
+  if (loggedIn && path === "/login" && !request.nextUrl.searchParams.has("error")) {
     const to = request.nextUrl.clone();
     to.pathname = "/";
     to.search = "";
