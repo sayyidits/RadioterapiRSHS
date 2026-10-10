@@ -34,16 +34,29 @@ The UI, code comments, and commit messages are in Indonesian. Match that when ed
 - **Kuota pesawat**: patients per machine **per working day**: Synergy 65, Precise 65, Cobalt 30, Brakiterapi none.
 - **Kuota CT Sim**: at most 7 patients per CT Sim date, across all machines (including Brakiterapi).
 
-## Accounts (self sign-up, approval, access levels)
+## Accounts (invite-only, access levels)
 
 Every account has two separate things:
 - **Role kerja** (`profiles.role`, `Role` in TS): dokter, perawat, rtt, fismed, administrasi. Decides which stages it can ACC.
 - **Hak akses** (`profiles.akses`, `akses_akun` enum, 0009; `AKSES` in `lib/workflow.ts`): **master > admin > nakes**. Decides who manages accounts. Nakes manage nothing. Admin approves/rejects sign-ups and changes role, deactivates, or reactivates **Nakes** accounts only, and cannot grant Admin/Master. Master manages every account, including granting and removing Admin/Master. Nobody can change their own status or access level (only their own role kerja), so nobody locks themselves out. The user set this hierarchy on 2026-10-10; that Admins cannot manage other Admins is my reading of it, so confirm before relying on it.
 
-Anyone can create an account (Google or email + password on `/login`, Supabase mode only). The
+**Accounts are created only by Admin/Master** (decided by the user on 2026-10-10; there is no
+self sign-up). On `/akun`, "Daftarkan akun" pre-registers an email with name, role kerja, and
+access (one at a time or pasted from Excel: email | name | role | access, separated by Tab, `;`, or
+`|`), through the `undang_akun` RPC into `undangan_akun` (0010). When that email first signs in with
+Google (or a confirmed email), `terapkan_undangan` activates the profile with the invitation's data.
+It runs from `handle_new_user` when the email is already confirmed at insert, and from the
+`on_auth_user_confirmed` trigger when Supabase confirms it in a separate update (Google can do
+either). Unconfirmed emails never use an invitation, so an email/password sign-up made through the
+API cannot take over a staff member's invitation. Admins can only invite and delete Nakes
+invitations. Inviting an email that already has a non-active profile activates it at once.
+"Allow new users to sign up" must stay on in Supabase, because an invited person's first Google
+sign-in creates their auth user.
+
+The login page offers only "Masuk dengan Google" and email + password (no sign-up tab). The
 `profiles.status` (`status_akun` enum, 0008) gates everything:
-- `baru`: just signed up, no role. `getCurrentUser()` sends them to `/daftar` to enter their full name with title and pick a role kerja (`lengkapi_profil` RPC).
-- `menunggu`: waiting for an Admin/Master. `/menunggu` shows the request and they can still edit it.
+- `baru`: signed in but not invited. `getCurrentUser()` sends them to `/daftar`, which only says the account is not registered. Admin/Master can register them from the "Belum terdaftar" group on `/akun` (pick a role, then Daftarkan, which calls `atur_akun`).
+- `menunggu`: legacy from the self sign-up flow (0008). The app no longer creates it.
 - `aktif`: approved. Only active accounts have a role in `current_user_role()` (so every RPC rejects the rest) and pass RLS on patients, stage_events, fractions, and attendance (`akun_aktif()`). Non-active accounts can read only their own profile.
 - `ditolak` / `nonaktif`: blocked, shown on `/menunggu`.
 - An active account with no role kerja (a Master converted from the old 0007 `master` role) is sent to `/daftar`, and `lengkapi_profil` lets it pick one while staying active.
@@ -167,8 +180,8 @@ happened, with no projection.
 
 **These rules live in two places that must stay in sync:**
 - `lib/workflow.ts`: labels, `owner` + `alsoBy` per stage (`stageActors()`, `canActOn()` with the DPJP check), form fields per stage (`FieldDef[]`), return targets, `MESIN`, `KUOTA_PESAWAT`, `JEDA_CT_VERIFIKASI`, `dueDate()`. Drives the whole UI. Forms are generated from field definitions, so there is no per-stage form component (the `ctsim` field type renders the CT Sim date picker). `lib/booking.ts` and `lib/holidays.ts` mirror the SQL scheduling rules for display.
-- `supabase/migrations/`, applied in order, later files replacing functions from earlier ones. `0001_init.sql`: schema, RLS, first versions of the RPCs. `0002_dpjp_mesin_absensi.sql`: DPJP, `can_act()` (DPJP + perawat rule), `is_valid_mesin()`, `today_wib()`, the `attendance` table, `set_attendance`, and new signatures for `create_patient`/`record_fraction`. `0003_alur_ringkas.sql`: current `stage_owner()`, `next_stage()` (enum order, skipping `ACC_PLAN`), `can_return()` (any earlier stage, by enum order). `0004_jadwal_kuota.sql`: `hari_libur`, `is_working_day()`, `working_days()`, `tgl_verifikasi_dari()`, `kuota_pesawat()`, `patients.tgl_ct_sim`/`tgl_verifikasi`, `jadwal_sinar()`, `hunian_pesawat()`, `kuota_penuh_pada()`, the current `can_return()` (down to CT_SIM), `poli_hangus()`, `daftar_ulang_poli`, and the current `advance_stage`. `0005_jadwal_fraksi_hari_ini.sql`: current `jadwal_sinar()` (fixes the same-day replanning double count). `0006_kuota_ct_sim.sql`: `kuota_ct_sim()`, `jumlah_ct_sim()`, and the current `advance_stage` (adds the CT Sim quota check at POLI). `0007_role_master.sql`: the `master` role value (obsolete since 0009). `0008_akun_mandiri.sql`: `status_akun`, `profiles.email`/`status`, the current `current_user_role()`, `akun_aktif()`, the RLS policies. `0009_hak_akses.sql`: `akses_akun`, `profiles.akses`, `akses_saya()`, and the current `handle_new_user()`, `lengkapi_profil`, and `atur_akun`. **This is the actual enforcement.** Hiding a button in the UI is cosmetic.
-  To read the live version of a function, find the latest file that defines it (`grep -n "function public.<name>" supabase/migrations/*.sql`, last hit wins). As of 0009: `return_stage`, `create_patient`, `record_fraction`, and `set_attendance` are last defined in 0002, `stage_owner` and `next_stage` in 0003, `can_return` in 0004, `jadwal_sinar` in 0005, `advance_stage` in 0006, `current_user_role` in 0008, and `handle_new_user`, `lengkapi_profil`, and `atur_akun` in 0009.
+- `supabase/migrations/`, applied in order, later files replacing functions from earlier ones. `0001_init.sql`: schema, RLS, first versions of the RPCs. `0002_dpjp_mesin_absensi.sql`: DPJP, `can_act()` (DPJP + perawat rule), `is_valid_mesin()`, `today_wib()`, the `attendance` table, `set_attendance`, and new signatures for `create_patient`/`record_fraction`. `0003_alur_ringkas.sql`: current `stage_owner()`, `next_stage()` (enum order, skipping `ACC_PLAN`), `can_return()` (any earlier stage, by enum order). `0004_jadwal_kuota.sql`: `hari_libur`, `is_working_day()`, `working_days()`, `tgl_verifikasi_dari()`, `kuota_pesawat()`, `patients.tgl_ct_sim`/`tgl_verifikasi`, `jadwal_sinar()`, `hunian_pesawat()`, `kuota_penuh_pada()`, the current `can_return()` (down to CT_SIM), `poli_hangus()`, `daftar_ulang_poli`, and the current `advance_stage`. `0005_jadwal_fraksi_hari_ini.sql`: current `jadwal_sinar()` (fixes the same-day replanning double count). `0006_kuota_ct_sim.sql`: `kuota_ct_sim()`, `jumlah_ct_sim()`, and the current `advance_stage` (adds the CT Sim quota check at POLI). `0007_role_master.sql`: the `master` role value (obsolete since 0009). `0008_akun_mandiri.sql`: `status_akun`, `profiles.email`/`status`, the current `current_user_role()`, `akun_aktif()`, the RLS policies. `0009_hak_akses.sql`: `akses_akun`, `profiles.akses`, `akses_saya()`, and the current `lengkapi_profil` and `atur_akun`. `0010_undangan_akun.sql`: `undangan_akun`, `terapkan_undangan`, `undang_akun`, `hapus_undangan`, the `on_auth_user_confirmed` trigger, and the current `handle_new_user()`. **This is the actual enforcement.** Hiding a button in the UI is cosmetic.
+  To read the live version of a function, find the latest file that defines it (`grep -n "function public.<name>" supabase/migrations/*.sql`, last hit wins). As of 0010: `return_stage`, `create_patient`, `record_fraction`, and `set_attendance` are last defined in 0002, `stage_owner` and `next_stage` in 0003, `can_return` in 0004, `jadwal_sinar` in 0005, `advance_stage` in 0006, `current_user_role` in 0008, `lengkapi_profil` and `atur_akun` in 0009, and `handle_new_user` in 0010.
 
 Stage-specific SQL logic in `advance_stage`: `PENDAFTARAN` updates identity columns from the
 payload. `POLI` writes `dosis_total_gy`/`total_fraksi` (required, > 0, not below fractions
@@ -192,7 +205,8 @@ Put SQL changes in a **new numbered migration file**:
 ## Commands
 
 ```bash
-npm run dev          # dev server (demo mode if no Supabase env, see below)
+npm run dev          # dev server, Supabase mode (demo mode if .env.local has no Supabase URL)
+npm run dev:demo     # dev server forced into demo mode (PGlite + dummy data), even with .env.local
 npm run build        # production build
 npm run lint         # eslint
 npm run typecheck    # next typegen && tsc --noEmit (PageProps/LayoutProps types come from typegen)
@@ -222,7 +236,7 @@ same day (2 rows that day under 0004, 1 under 0005), and every other patient's `
 rows unchanged. For 0006: POLI patients hold no CT slot, ACC up to 7 on one date (Brakiterapi, to
 isolate the CT check) then the 8th is rejected and stays at POLI, `exclude` skips the patient
 itself, `ctSimOptions` agrees with `jumlah_ct_sim`, and no seeded CT Sim date exceeds 7.
-For 0008: a Google sign-up that puts `role: dokter` in its own `user_metadata` stays `baru` with no role and cannot read patients, events, fractions, attendance, `jadwal_sinar`, or call any RPC until a Master approves it. It cannot pick `master` or approve itself, a non-Master cannot approve, deactivation removes access again, and accounts created before 0008 stay active. For 0009: an old `master`-role account becomes akses master with no role kerja and can pick one while staying active; Admin approves and edits Nakes but cannot grant Admin, touch Admin or Master accounts, or change its own status or access; Master can promote, demote, and edit other Masters but not itself; a demoted Admin loses account management at once. Patients created with `create_patient` get the real `now()`, so set their `stage_entered_at` to
+For 0008: a Google sign-up that puts `role: dokter` in its own `user_metadata` stays `baru` with no role and cannot read patients, events, fractions, attendance, `jadwal_sinar`, or call any RPC until a Master approves it. It cannot pick `master` or approve itself, a non-Master cannot approve, deactivation removes access again, and accounts created before 0008 stay active. For 0009: an old `master`-role account becomes akses master with no role kerja and can pick one while staying active; Admin approves and edits Nakes but cannot grant Admin, touch Admin or Master accounts, or change its own status or access; Master can promote, demote, and edit other Masters but not itself; a demoted Admin loses account management at once. For 0010: Nakes cannot invite; Admin cannot invite as Admin or change/delete an Admin invitation; bad email/name/role is reported per row; an unconfirmed sign-up with an invited email stays `baru` and leaves the invitation unused; confirmation (separate update, or confirmed at insert) activates with the invitation's name/role/access; uninvited accounts read nothing; inviting an already-signed-in `baru` account activates it; active accounts are not changed by invitations; deleted invitations no longer apply. Note `x in (...)` is NULL, not false, when `x` is NULL, which once kept `not v_valid` from ever being true; use `coalesce`. Patients created with `create_patient` get the real `now()`, so set their `stage_entered_at` to
 the mocked day or POLI counts as hangus. Most bugs here only show on a working day, so when today is a weekend, override
 `today_wib()` after the migrations and pass the same date as `now` to `buildDemoPatients(ids, now)`.
 A script that imports TS from the project and lives
@@ -232,12 +246,17 @@ the earlier files, insert the old-state rows, then apply the new file. If you ch
 re-verify the same way.
 
 Run only **one** dev server at a time. Demo mode's PGlite holds the data directory open, and two
-processes on it will corrupt it. `.claude/launch.json` defines this server as `dev` (port 3000) for
-the preview tools. Reuse it instead of starting a second `next dev`.
+processes on it will corrupt it. `.claude/launch.json` defines two configurations on port 3000 for
+the preview tools: `dev` (Supabase mode when `.env.local` is filled in) and `dev-demo`. Stop one
+before starting the other, and reuse a running one instead of starting a second `next dev`.
 
 ## Two runtime modes
 
-`lib/mode.ts`: `IS_DEMO = !process.env.NEXT_PUBLIC_SUPABASE_URL` (inlined at build time).
+`lib/mode.ts`: `IS_DEMO = NEXT_PUBLIC_DEMO === "1" || !NEXT_PUBLIC_SUPABASE_URL` (inlined when the
+dev server or build starts, so switching mode means restarting). `.env.local` now holds the user's
+real Supabase project, so `npm run dev` is Supabase mode and `npm run dev:demo`
+(`scripts/dev-demo.mjs`, sets `NEXT_PUBLIC_DEMO=1`) is demo mode. Never set `NEXT_PUBLIC_DEMO` on
+Vercel: it would turn the public site into the login-free demo.
 
 **Demo mode** (current default, used for the presentation):
 - `lib/demo/db.ts` runs PGlite (Postgres in WASM) inside the Next.js process. On first open it creates a minimal Supabase stub (`anon`/`authenticated`/`service_role` roles, `auth.users`, `auth.uid()` reading `request.jwt.claim.sub`), runs the **same** migration files, and seeds from `lib/demo-seed.ts`.
@@ -247,7 +266,7 @@ the preview tools. Reuse it instead of starting a second `next dev`.
 - Besides the ~18 named patients (6 at POLI for the doctors/nurse to book, plus late examples like Teguh at CT Sim and Hendra at Verifikasi, Wayan returned from Penyinaran to PLANNING today for replanning, and Nurhayati, whose Poli visit from yesterday is hangus; every other POLI patient is registered today), `fillerSpecs()` generates ~330 filler patients with a fixed-seed PRNG. They fill occupancy up to the quota on the working-day ranges in `FULL` (today through about 4 weeks, with a gap so short courses fit earlier than long ones). Day 0 is filled with PENYINARAN patients, and later days with patients whose verifikasi falls on that day (stage derived from their CT Sim date). No CT Sim date gets more than `KUOTA_CT_SIM` patients (past dates included), so days whose CT Sim date is full are filled later and the machines sit at roughly 80–100% instead of exactly full. Days are filled for all three machines in turn so the CT Sim slots are shared fairly. Changing `FULL`, `COURSES`, or the named patients changes the whole picture, so check occupancy afterwards (Info Pesawat, or `hunian_pesawat()` in PGlite).
 - Seeding inserts multi-row batches (`insertMany` in `lib/demo/db.ts`, 500-row chunks in `scripts/seed.ts`), because the seed has thousands of fraction/attendance rows.
 - "Reset data demo" asks for a browser `confirm()`. An automated browser dismisses it, so the reset silently does nothing. Ask the user to click it.
-- No login: the `demo_uid` cookie holds one of the fixed `DEMO_USERS` ids (two doctors, `dokter` and `dokter2`, so the DPJP split is visible, and one account for each other role). dr. Andi (`dokter`) also has Master access and Dewi Lestari (`administrasi`) Admin access. `DEMO_PENDAFTAR` adds sign-ups waiting for approval (not selectable as a demo account). There is no Google login, `/daftar`, or `/menunggu` flow in demo mode. Seed code addresses accounts by `DemoKey`, not by role. You pick an account on `/login`, and a "Lihat sebagai" dropdown in the header switches account while staying on the same page. "Reset data demo" is on the `/login` role-picker page, which `proxy.ts` only shows when no account is selected.
+- No login: the `demo_uid` cookie holds one of the fixed `DEMO_USERS` ids (two doctors, `dokter` and `dokter2`, so the DPJP split is visible, and one account for each other role). dr. Andi (`dokter`) also has Master access and Dewi Lestari (`administrasi`) Admin access. `DEMO_UNDANGAN` adds two unused invitations and `DEMO_PENDAFTAR` one Google account that signed in without an invitation (not selectable as a demo account). There is no Google login, `/daftar`, or `/menunggu` flow in demo mode. Seed code addresses accounts by `DemoKey`, not by role. You pick an account on `/login`, and a "Lihat sebagai" dropdown in the header switches account while staying on the same page. "Reset data demo" is on the `/login` role-picker page, which `proxy.ts` only shows when no account is selected.
 - `getDemoDb()` caches the open promise on `globalThis`, and a failed open clears it. If you ever see the same init error repeating, restart the dev server.
 
 **Supabase mode** (the production path, see Deployment): `@supabase/ssr` cookie sessions
@@ -266,7 +285,8 @@ backend directly:
 - The primary action is a **"+ Pasien baru" button** (`components/add-patient-button.tsx`, top-right of the dashboard and the patient list, administrasi only) instead of relying on the header nav link, because the user found people miss the link at the top. Keep it in production. Style: the standard teal `btn btn-primary` at normal size. The user tried a larger emerald "Tambah pasien" variant and preferred this one.
 - Patient list (`components/patient-table.tsx`): the stage column is labeled **"Status"**, and so is the list filter. The **Fraksi** column only shows a value while the patient is in `PENYINARAN` (to avoid distraction) and renders `done/total` with a pastel light-blue (`bg-sky-300`) progress bar under it. Every other status shows "-".
 - Registration form fields: No. RM, nama, tanggal lahir, jenis kelamin (L/P), no HP, diagnosis rujukan, and a required **Dokter DPJP** select.
-- Login page (Supabase mode): "Masuk dengan Google" button, then Masuk / "Daftar akun baru" tabs for email. `?error=` codes from the callback are shown as Indonesian messages. Admin and Master get an "Akun" nav tab, and their usual role-kerja dashboard gets an extra "Akun menunggu persetujuan" card while sign-ups are waiting.
+- `/profil` (the user's name in the header, a "Profil" button on narrow screens): own profile plus "Atur password" (`supabase.auth.updateUser`), so an account that signed up with Google can also sign in with email + password (Supabase keeps it one account). Name, role, and access are changed only by Admin/Master. - `/privasi`: public privacy policy (no login, allowed in both `proxy.ts` paths), linked from the login page and used as the privacy policy URL on the Google consent screen. Its wording is a draft for the hospital to review; the contact email is the `KONTAK` constant.
+- Login page (Supabase mode): "Masuk dengan Google" button and an email + password form only. Accounts are created by Admin/Master (see Accounts). `?error=` codes from the callback are shown as Indonesian messages. Admin and Master get an "Akun" nav tab, and their usual role-kerja dashboard gets an extra "Akun menunggu persetujuan" card while sign-ups are waiting.
 - Doctors get two nav tabs: **"Daftar Pasien"** (`/pasien/saya`, only their DPJP patients) and **"Daftar Pasien Penuh"** (`/pasien`, everyone). Other roles have one "Daftar Pasien" tab. Both pages render `components/patient-list.tsx`. A doctor's "Tugas saya" on the dashboard only lists their own patients.
 - `/penyinaran` lists `PENYINARAN` patients grouped by machine, with today's attendance. The nav tab is labeled "Absen Penyinaran" for administrasi and "Penyinaran Hari Ini" for RTT, and RTT can record fractions inline there for patients marked hadir.
 - **"Info Pesawat"** tab (`/pesawat`, all roles, right after the patient-list tab(s)) is **per day**. For each external machine (Synergy, Precise, Cobalt, not Brakiterapi) it shows occupancy on the selected date (`?tanggal=`, `DateNav`) against the daily quota (65 / 65 / 30). Below that is a 20-working-day bar strip (sky, amber at ≥ 90%, rose when full; click a day to select it) and that day's patients ("Fx k/n" or "Verifikasi & mulai"). The quota is a hard limit only when booking at POLI (and changing the machine at PLANNING). Delays can still push a day over, and that shows in rose. The Planning machine dropdown labels each machine "tersedia" / "penuh N hari" for this patient's remaining days.

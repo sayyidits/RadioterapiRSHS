@@ -19,11 +19,10 @@ async function siteOrigin() {
 
 /** Pesan error Supabase Auth (bahasa Inggris) dalam bahasa Indonesia */
 function authMessage(message: string) {
-  if (/invalid login credentials/i.test(message)) return "Email atau password salah";
+  if (/invalid login credentials/i.test(message))
+    return "Email atau password salah. Kalau Anda mendaftar dengan Google, masuk dengan tombol Google lalu atur password di menu Profil.";
   if (/email not confirmed/i.test(message)) return "Email belum dikonfirmasi. Buka tautan konfirmasi di email Anda.";
-  if (/already registered/i.test(message)) return "Email ini sudah terdaftar. Silakan masuk.";
   if (/rate limit/i.test(message)) return "Terlalu banyak percobaan. Coba lagi beberapa menit lagi.";
-  if (/signups? not allowed/i.test(message)) return "Pendaftaran akun baru sedang ditutup. Hubungi Admin.";
   return message;
 }
 
@@ -43,27 +42,7 @@ export async function signIn(_prev: ActionState, formData: FormData): Promise<Ac
   redirect("/");
 }
 
-/** Daftar dengan email. Setelah konfirmasi email, pengguna melengkapi profil di /daftar. */
-export async function signUp(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { email, password } = readCredentials(formData);
-  if (!email || !password) return { error: "Email dan password wajib diisi" };
-  if (password.length < 8) return { error: "Password minimal 8 karakter" };
-  if (password !== formData.get("konfirmasi")) return { error: "Konfirmasi password tidak sama" };
-
-  const supabase = await createClient();
-  const { data, error } = await supabase.auth.signUp({
-    email,
-    password,
-    options: { emailRedirectTo: `${await siteOrigin()}/auth/callback` },
-  });
-  if (error) return { error: authMessage(error.message) };
-
-  // Konfirmasi email dimatikan di Supabase: langsung masuk
-  if (data.session) redirect("/daftar");
-  return { success: `Tautan konfirmasi sudah dikirim ke ${email}. Buka email tersebut untuk melanjutkan pendaftaran.` };
-}
-
-/** Masuk / daftar dengan Google. Supabase mengembalikan pengguna ke /auth/callback. */
+/** Masuk dengan Google. Supabase mengembalikan pengguna ke /auth/callback. */
 export async function signInWithGoogle() {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithOAuth({

@@ -40,13 +40,17 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             <NavLinks links={links} />
           </div>
           <div className="ml-auto flex items-center gap-3">
-            <div className="hidden text-right sm:block">
+            <Link href="/profil" className="hidden text-right hover:opacity-80 sm:block" title="Profil & password">
               <p className="text-sm font-medium leading-tight">{user.full_name}</p>
               <p className="text-xs text-slate-500">
                 {IS_DEMO ? "Mode demo" : user.email}
                 {user.akses !== "nakes" && <> · {AKSES[user.akses]}</>}
               </p>
-            </div>
+            </Link>
+            {/* Di layar sempit nama disembunyikan, jadi tautan profil tampil sebagai tombol */}
+            <Link href="/profil" className="btn btn-secondary px-3 py-1.5 text-xs sm:hidden">
+              Profil
+            </Link>
             {IS_DEMO ? (
               <RoleSwitcher users={DEMO_USERS} currentId={user.id} />
             ) : (

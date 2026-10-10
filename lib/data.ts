@@ -6,7 +6,7 @@ import { createClient } from "./supabase/server";
 import { todayISO } from "./format";
 import type { Hunian } from "./booking";
 import type { AttendanceDay } from "./schedule";
-import type { Akun, AttendanceEntry, Fraction, Patient, Profile, StageEvent } from "./types";
+import type { Akun, AttendanceEntry, Fraction, Patient, Profile, StageEvent, Undangan } from "./types";
 import type { StageKey } from "./workflow";
 
 const BASE_COLUMNS =
@@ -181,6 +181,31 @@ export async function listDoctors() {
     .order("full_name");
   if (error) throw new Error(error.message);
   return (data ?? []) as Profile[];
+}
+
+/** Undangan yang belum dipakai (pemiliknya belum pernah masuk), terbaru lebih dulu. Hanya terbaca Admin/Master. */
+export async function listUndangan() {
+  if (IS_DEMO) {
+    return demo((tx) =>
+      selectJson<Undangan>(
+        tx,
+        `select u.email, u.full_name, u.role, u.akses, u.dibuat_at, p.full_name as dibuat_oleh_nama
+         from public.undangan_akun u left join public.profiles p on p.id = u.dibuat_oleh
+         where u.dipakai_at is null order by u.dibuat_at desc, u.email`,
+      ),
+    );
+  }
+  const supabase = await createClient();
+  const rows = await fetchAll<Omit<Undangan, "dibuat_oleh_nama"> & { pembuat: { full_name: string } | null }>((from, to) =>
+    supabase
+      .from("undangan_akun")
+      .select("email, full_name, role, akses, dibuat_at, pembuat:profiles!undangan_akun_dibuat_oleh_fkey(full_name)")
+      .is("dipakai_at", null)
+      .order("dibuat_at", { ascending: false })
+      .order("email")
+      .range(from, to),
+  );
+  return rows.map(({ pembuat, ...u }) => ({ ...u, dibuat_oleh_nama: pembuat?.full_name ?? null }));
 }
 
 /** Semua akun untuk halaman Akun (Admin/Master), terbaru lebih dulu. */

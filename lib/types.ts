@@ -9,6 +9,19 @@ export type Profile = {
 /** baru: belum melengkapi profil · menunggu: menunggu persetujuan Admin/Master */
 export type StatusAkun = "baru" | "menunggu" | "aktif" | "ditolak" | "nonaktif";
 
+/** Pra-daftar oleh Admin/Master: akun langsung aktif saat pemilik email ini masuk pertama kali */
+export type Undangan = {
+  email: string;
+  full_name: string;
+  role: Role;
+  akses: Akses;
+  dibuat_at: string;
+  dibuat_oleh_nama: string | null;
+};
+
+/** Hasil per baris dari undang_akun */
+export type HasilUndangan = { email: string; ok: boolean; hasil: string };
+
 /** User aktif yang sedang login: role kerja + hak akses pengelolaan akun */
 export type CurrentUser = Profile & { email: string; akses: Akses };
 

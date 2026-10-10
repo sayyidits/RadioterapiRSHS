@@ -42,13 +42,22 @@ Aturan alur ada di dua tempat yang harus selalu sama:
 
 Next.js 16 (App Router, Server Actions), Tailwind CSS 4, Supabase (Postgres, Auth, RLS), dan deploy di Vercel.
 
-## Menjalankan mode demo (tanpa setup)
+## Dua mode di localhost
 
-Jika `.env.local` belum berisi `NEXT_PUBLIC_SUPABASE_URL`, aplikasi otomatis berjalan dalam **mode demo**:
+| Perintah | Mode | Isi |
+|---|---|---|
+| `npm run dev` | **Supabase** (bila `.env.local` sudah diisi) | Database online, login Google/email, akun sungguhan |
+| `npm run dev:demo` | **Demo** | Database lokal di laptop, ±350 pasien dummy, pilih role tanpa login |
+
+`.env.local` tidak perlu diubah atau di-rename untuk berganti mode: hentikan server (`Ctrl+C`), lalu jalankan perintah yang lain. Jalankan satu server saja dalam satu waktu (port 3000). Tanpa `.env.local`, `npm run dev` juga otomatis berjalan dalam mode demo.
+
+Website di Vercel selalu memakai mode Supabase. **Jangan** pasang `NEXT_PUBLIC_DEMO` di Vercel.
+
+## Menjalankan mode demo
 
 ```bash
 npm install
-npm run dev
+npm run dev:demo
 ```
 
 Buka http://localhost:3000 lalu pilih role. Di mode demo:
@@ -68,18 +77,20 @@ Skenario demo singkat:
 7. **Administrasi**: menu **Absen Penyinaran** → tandai pasien hadir / tidak hadir.
 8. **RTT**: menu **Penyinaran Hari Ini** → catat fraksi untuk pasien yang hadir, dikelompokkan per mesin. Untuk melihat penyelesaian dengan cepat, pakai pasien "Slamet Riyadi" (3/5 fraksi). Di halaman pasien yang sedang penyinaran ada **Kembalikan untuk replanning**.
 9. **Semua role**: menu **Info Pesawat** → jumlah pasien per hari di tiap pesawat dibanding kuota harian (Cobalt 30). Klik salah satu hari di grafik untuk melihat daftar pasiennya. Di dashboard, ganti tanggal di bagian **Agenda**.
-10. **dr. Andi (Dokter + Master)** atau **Dewi Lestari (Administrasi + Admin)**: menu **Akun** → setujui atau tolak pendaftar contoh ("dr. Budi Hartono", "Ns. Putri Maharani"). Dokter yang disetujui langsung muncul di pilihan DPJP. Bandingkan: Admin tidak bisa mengubah akun dr. Andi (Master) dan tidak bisa memberi hak Admin. Halaman login Google dan lengkapi profil hanya ada di mode Supabase.
+10. **dr. Andi (Dokter + Master)** atau **Dewi Lestari (Administrasi + Admin)**: menu **Akun** → daftarkan akun baru (coba tempel beberapa baris dari Excel), lihat undangan contoh ("dr. Budi Hartono", "Ns. Putri Maharani"), dan daftarkan "Fitri Amelia" yang sudah masuk tanpa didaftarkan. Bandingkan: Admin tidak bisa mengubah akun dr. Andi (Master) dan tidak bisa memberi hak Admin. Login Google hanya ada di mode Supabase.
 
 ## Akun dan login (mode Supabase)
 
-- Siapa pun bisa membuat akun dengan **Google** atau **email + password** di halaman login.
-- Akun baru wajib **melengkapi profil**: nama lengkap beserta gelar dan role yang diminta.
-- Setelah itu akun **menunggu persetujuan** dan belum bisa melihat data pasien apa pun.
+- **Akun hanya dibuat oleh Admin atau Master.** Di menu **Akun → Daftarkan akun**, isi email Google nakes beserta nama lengkap + gelar dan role kerja, satu per satu atau tempel banyak baris dari Excel (kolom: email, nama, role, lalu hak akses bila perlu).
+- Saat nakes itu klik **Masuk dengan Google** untuk pertama kali, akunnya langsung aktif dengan nama dan role tadi.
+- Halaman login hanya berisi **Masuk dengan Google** dan **email + password**. Tidak ada pendaftaran mandiri.
+- Orang yang masuk dengan Google tanpa didaftarkan hanya melihat pesan "Akun belum terdaftar" dan tidak bisa melihat data apa pun. Admin/Master bisa langsung mendaftarkannya dari kelompok **Belum terdaftar** di halaman Akun.
 - Setiap akun punya **role kerja** (Dokter, Perawat, RTT, Fismed, Administrasi), yang menentukan tahap yang bisa di-ACC, dan **hak akses** dengan urutan **Master → Admin → Nakes**:
   - **Nakes**: tidak mengelola akun.
   - **Admin**: menyetujui/menolak pendaftar, mengubah role kerja, dan menonaktifkan akun Nakes di menu **Akun**. Tidak bisa mengubah akun Admin/Master atau memberi hak Admin/Master.
   - **Master**: mengelola semua akun, termasuk mengangkat Admin atau Master lain.
   - Status dan hak akses akun sendiri tidak bisa diubah sendiri.
+- Akun yang mendaftar dengan Google bisa juga masuk dengan **email + password**: klik nama Anda di kanan atas (menu **Profil**), lalu atur password. Halaman yang sama dipakai untuk mengganti password.
 - Aturan ini ditegakkan di database (RLS dan fungsi Postgres), bukan hanya di tampilan.
 
 ## Setup Supabase + Vercel (untuk pemakaian sebenarnya)
@@ -96,7 +107,7 @@ Skenario demo singkat:
    npm install
    npm run db:setup
    ```
-   Alternatif tanpa `SUPABASE_DB_URL`: buka Supabase → SQL Editor, lalu tempel dan jalankan **semua** file di `supabase/migrations/` satu per satu secara berurutan (0001 sampai 0009).
+   Alternatif tanpa `SUPABASE_DB_URL`: buka Supabase → SQL Editor, lalu tempel dan jalankan **semua** file di `supabase/migrations/` satu per satu secara berurutan (0001 sampai 0010).
 4. `npm run db:seed` (opsional) membuat 6 akun demo (dokter@flowrt.test sebagai Master, admin@flowrt.test sebagai Admin) dan ±350 pasien dummy. **Jangan dijalankan** di database yang akan dipakai sungguhan, atau nonaktifkan akun demo setelahnya.
 
 ### 2. Deploy ke Vercel
@@ -111,7 +122,7 @@ Skenario demo singkat:
    - **Site URL**: alamat Vercel tadi
    - **Redirect URLs**: tambahkan `https://<alamat-vercel>/auth/callback` dan `http://localhost:3000/auth/callback`
 2. Supabase → **Authentication → Sign In / Providers**:
-   - **Allow new users to sign up**: aktif (persetujuan Admin/Master yang menyaring akun)
+   - **Allow new users to sign up**: **aktif**. Wajib, karena saat nakes yang didaftarkan masuk Google pertama kali, Supabase membuat akunnya saat itu. Penyaringan dilakukan database: hanya email yang didaftarkan Admin/Master yang mendapat akses.
    - **Email**: aktif, dengan **Confirm email** aktif. Pengiriman email bawaan Supabase sangat dibatasi; untuk pemakaian sebenarnya pasang SMTP sendiri di Authentication → Emails → SMTP Settings.
 3. **Google Cloud Console** (https://console.cloud.google.com):
    1. Buat project, lalu **APIs & Services → OAuth consent screen**: isi nama aplikasi dan email kontak, tipe *External*.
@@ -122,12 +133,12 @@ Skenario demo singkat:
 
 ### 4. Master pertama
 
-1. Buka website, daftar dengan email atau Google, lalu lengkapi profil. Akun akan berstatus menunggu persetujuan.
+1. Buka website dan **Masuk dengan Google** sekali. Akun akan berstatus "belum terdaftar".
 2. Beri akun itu hak akses Master (sekali saja, role kerjanya tetap, dari komputer yang punya `.env.local` berisi `SUPABASE_DB_URL`):
    ```bash
    npm run akun:master -- email-anda@contoh.com
    ```
-3. Muat ulang website. Menu **Akun** muncul, dan pendaftaran staf berikutnya disetujui dari sana. Admin dan Master lain diangkat dengan memilih hak akses di halaman Akun.
+3. Muat ulang website. Kalau diminta, pilih role kerja Anda. Menu **Akun** muncul, dan semua staf berikutnya didaftarkan dari sana. Admin dan Master lain diangkat dengan memilih hak akses di halaman Akun.
 
 ## Keamanan
 

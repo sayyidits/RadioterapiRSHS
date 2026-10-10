@@ -17,6 +17,7 @@ function demoGate(request: NextRequest) {
     res.cookies.delete(DEMO_COOKIE);
     return res;
   }
+  if (request.nextUrl.pathname.startsWith("/privasi")) return NextResponse.next();
   const hasRole = request.cookies.has(DEMO_COOKIE);
   if (!hasRole && !onLogin) return NextResponse.redirect(new URL("/login", request.url));
   if (hasRole && onLogin) return NextResponse.redirect(new URL("/", request.url));

@@ -1,3 +1,4 @@
+import Link from "next/link";
 import { ResetDemoButton } from "@/components/demo-controls";
 import { Logo, LogoLengkap } from "@/components/logo";
 import { DEMO_USERS } from "@/lib/demo-seed";
@@ -58,6 +59,11 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
             </p>
           )}
           {IS_DEMO ? <DemoRolePicker /> : <PasswordLogin />}
+          <p className="mt-8 text-center text-xs text-slate-500">
+            <Link href="/privasi" className="hover:text-teal-700 hover:underline">
+              Kebijakan Privasi
+            </Link>
+          </p>
         </div>
       </section>
     </main>
@@ -69,7 +75,7 @@ function PasswordLogin() {
     <>
       <h1 className="text-2xl font-semibold">Selamat datang</h1>
       <p className="mb-6 mt-1 text-sm text-slate-500">
-        Masuk dengan akun Google atau email. Akun baru dapat digunakan setelah disetujui Admin atau Master.
+        Masuk dengan akun Google atau email yang sudah didaftarkan oleh Admin atau Master.
       </p>
       <LoginForm />
     </>

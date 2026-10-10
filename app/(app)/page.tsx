@@ -49,7 +49,8 @@ export default async function DashboardPage({ searchParams }: PageProps<"/">) {
     ),
     kelolaAkun(user.akses) ? listAccounts() : [],
   ]);
-  const pendingAccounts = accounts.filter((a) => a.status === "menunggu");
+  // Akun yang sudah masuk tetapi belum didaftarkan / disetujui
+  const pendingAccounts = accounts.filter((a) => a.status === "baru" || a.status === "menunggu");
   const myTasks = prioritize(mine, today, doneToday);
   // Dokter: antrean Poli (belum dijadwalkan) dipisah dari tugas bertanggal (Delineasi)
   const splitPoli = user.role === "dokter";
@@ -125,14 +126,14 @@ function SectionHeader({ title, count, hint, children }: { title: string; count:
   );
 }
 
-/** Admin/Master: pendaftaran akun yang menunggu persetujuan */
+/** Admin/Master: akun yang sudah masuk tetapi belum didaftarkan / disetujui */
 function PendingAccounts({ accounts }: { accounts: Akun[] }) {
   return (
     <section className="card">
       <SectionHeader
-        title="Akun menunggu persetujuan"
+        title="Akun belum terdaftar"
         count={accounts.length}
-        hint="Akun baru hanya dapat melihat data pasien setelah Anda setujui."
+        hint="Sudah masuk dengan Google tetapi belum didaftarkan. Daftarkan dari halaman Akun bila staf."
       >
         <Link href="/akun" className="btn btn-secondary px-3 py-1.5">
           Kelola akun

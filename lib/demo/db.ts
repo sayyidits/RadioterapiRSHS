@@ -3,7 +3,7 @@ import { PGlite, type Transaction } from "@electric-sql/pglite";
 import { createHash, randomUUID } from "node:crypto";
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync } from "node:fs";
 import { join } from "node:path";
-import { DEMO_PENDAFTAR, DEMO_USERS, buildDemoPatients, type DemoKey } from "../demo-seed";
+import { DEMO_PENDAFTAR, DEMO_UNDANGAN, DEMO_USERS, buildDemoPatients, type DemoKey } from "../demo-seed";
 
 // Mode demo: Postgres (PGlite) berjalan di dalam proses Next.js, memakai
 // migration SQL yang sama dengan Supabase. Data disimpan di node_modules/.cache/demo-db
@@ -20,7 +20,8 @@ const SUPABASE_STUB = `
     id uuid primary key default gen_random_uuid(),
     email text,
     raw_user_meta_data jsonb,
-    raw_app_meta_data jsonb
+    raw_app_meta_data jsonb,
+    email_confirmed_at timestamptz
   );
   create function auth.uid() returns uuid language sql stable as $$
     select nullif(current_setting('request.jwt.claim.sub', true), '')::uuid
@@ -107,15 +108,20 @@ async function initialize(db: PGlite, fingerprint: string) {
       [u.id, u.email, JSON.stringify({ full_name: u.full_name }), JSON.stringify({ role: u.role, akses: u.akses ?? "nakes" })],
     );
   }
-  // Pendaftar mandiri: profil 'baru' dari trigger, lalu sebagian sudah melengkapi profil
+  // Pernah masuk dengan Google tetapi belum didaftarkan: profil 'baru' tanpa akses
   for (const p of DEMO_PENDAFTAR) {
-    await db.query("insert into auth.users (id, email, raw_user_meta_data) values ($1, $2, '{}'::jsonb)", [p.id, p.email]);
-    await db.query("update public.profiles set full_name = $2, role = $3, status = $4 where id = $1", [
-      p.id,
-      p.full_name,
-      p.role,
-      p.status,
-    ]);
+    await db.query(
+      "insert into auth.users (id, email, raw_user_meta_data, email_confirmed_at) values ($1, $2, $3::jsonb, now())",
+      [p.id, p.email, JSON.stringify({ full_name: p.full_name })],
+    );
+  }
+  // Undangan yang belum dipakai (dibuat Admin/Master, pemiliknya belum pernah masuk)
+  const [admin] = DEMO_USERS.filter((u) => u.akses === "admin");
+  for (const u of DEMO_UNDANGAN) {
+    await db.query(
+      "insert into public.undangan_akun (email, full_name, role, akses, dibuat_oleh) values ($1, $2, $3, 'nakes', $4)",
+      [u.email, u.full_name, u.role, admin.id],
+    );
   }
 
   const ids = Object.fromEntries(DEMO_USERS.map((u) => [u.key, u.id])) as Record<DemoKey, string>;

@@ -18,7 +18,10 @@ const AKSI: Record<Akun["status"], [string, string, string][]> = {
     ["aktif", "Simpan", "btn-secondary"],
     ["nonaktif", "Nonaktifkan", "btn-danger"],
   ],
-  baru: [["ditolak", "Tolak", "btn-secondary"]],
+  baru: [
+    ["aktif", "Daftarkan", "btn-primary"],
+    ["ditolak", "Tolak", "btn-secondary"],
+  ],
   ditolak: [["aktif", "Aktifkan", "btn-primary"]],
   nonaktif: [["aktif", "Aktifkan kembali", "btn-primary"]],
 };
@@ -58,9 +61,7 @@ export function AccountRow({ akun, saya }: { akun: Akun; saya: { id: string; aks
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          {akun.status === "baru" ? (
-            <span className="text-xs text-slate-500">Belum melengkapi profil</span>
-          ) : !hak.kelola ? (
+          {!hak.kelola ? (
             <span className="text-sm text-slate-700">{akun.role ? ROLES[akun.role] : "-"}</span>
           ) : (
             <select
@@ -79,7 +80,7 @@ export function AccountRow({ akun, saya }: { akun: Akun; saya: { id: string; aks
               ))}
             </select>
           )}
-          {hak.aksesBisaDiubah && akun.status !== "baru" && (
+          {hak.aksesBisaDiubah && (
             <select
               name="akses"
               defaultValue={akun.akses}

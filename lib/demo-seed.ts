@@ -23,14 +23,15 @@ export const DEMO_USERS: { key: DemoKey; id: string; email: string; full_name: s
   { key: "administrasi", id: "00000000-0000-4000-8000-000000000005", email: "admin@flowrt.test", full_name: "Dewi Lestari", role: "administrasi", akses: "admin" },
 ];
 
-/**
- * Contoh pendaftar mandiri untuk halaman Akun (Admin/Master), hanya di mode demo:
- * dua menunggu persetujuan, satu belum melengkapi profil.
- */
-export const DEMO_PENDAFTAR: { id: string; email: string; full_name: string; role: Role | null; status: "baru" | "menunggu" }[] = [
-  { id: "00000000-0000-4000-8000-000000000101", email: "budi.hartono@gmail.com", full_name: "dr. Budi Hartono, Sp.Onk.Rad", role: "dokter", status: "menunggu" },
-  { id: "00000000-0000-4000-8000-000000000102", email: "putri.maharani@gmail.com", full_name: "Ns. Putri Maharani, S.Kep", role: "perawat", status: "menunggu" },
-  { id: "00000000-0000-4000-8000-000000000103", email: "fitri.amelia@gmail.com", full_name: "fitri.amelia@gmail.com", role: null, status: "baru" },
+/** Contoh undangan (pra-daftar) dari Admin yang pemiliknya belum pernah masuk, hanya di mode demo */
+export const DEMO_UNDANGAN: { email: string; full_name: string; role: Role }[] = [
+  { email: "budi.hartono@gmail.com", full_name: "dr. Budi Hartono, Sp.Onk.Rad", role: "dokter" },
+  { email: "putri.maharani@gmail.com", full_name: "Ns. Putri Maharani, S.Kep", role: "perawat" },
+];
+
+/** Contoh akun yang sudah masuk dengan Google tetapi belum didaftarkan Admin/Master, hanya di mode demo */
+export const DEMO_PENDAFTAR: { id: string; email: string; full_name: string }[] = [
+  { id: "00000000-0000-4000-8000-000000000103", email: "fitri.amelia@gmail.com", full_name: "Fitri Amelia" },
 ];
 
 type Identity = {

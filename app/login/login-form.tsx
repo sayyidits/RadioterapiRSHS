@@ -1,14 +1,12 @@
 "use client";
 
-import { useActionState, useState } from "react";
+import { useActionState } from "react";
 import { FormMessage } from "@/components/form-message";
 import { SubmitButton } from "@/components/submit-button";
-import { signIn, signInWithGoogle, signUp } from "./actions";
+import { signIn, signInWithGoogle } from "./actions";
 
-/** Login Supabase: Google, atau email + password (tab Masuk / Daftar). */
+/** Login Supabase: Google, atau email + password. Akun dibuat oleh Admin/Master, tidak ada pendaftaran mandiri. */
 export function LoginForm() {
-  const [mode, setMode] = useState<"masuk" | "daftar">("masuk");
-
   return (
     <div className="space-y-5">
       <form action={signInWithGoogle}>
@@ -24,22 +22,7 @@ export function LoginForm() {
         <span className="h-px flex-1 bg-slate-200" />
       </div>
 
-      <div className="grid grid-cols-2 rounded-lg bg-slate-100 p-1 text-sm" role="tablist">
-        {(["masuk", "daftar"] as const).map((m) => (
-          <button
-            key={m}
-            type="button"
-            role="tab"
-            aria-selected={mode === m}
-            onClick={() => setMode(m)}
-            className={`rounded-md py-1.5 font-medium ${mode === m ? "bg-white text-teal-800 shadow-xs" : "text-slate-600"}`}
-          >
-            {m === "masuk" ? "Masuk" : "Daftar akun baru"}
-          </button>
-        ))}
-      </div>
-
-      {mode === "masuk" ? <SignInForm /> : <SignUpForm />}
+      <SignInForm />
     </div>
   );
 }
@@ -58,40 +41,6 @@ function SignInForm() {
       </div>
       <FormMessage state={state} />
       <SubmitButton pendingText="Masuk…" className="w-full">Masuk</SubmitButton>
-    </form>
-  );
-}
-
-function SignUpForm() {
-  const [state, action] = useActionState(signUp, undefined);
-  return (
-    <form action={action} className="space-y-4">
-      <div>
-        <label htmlFor="su-email" className="label">Email</label>
-        <input id="su-email" name="email" type="email" autoComplete="email" required className="input" />
-      </div>
-      <div>
-        <label htmlFor="su-password" className="label">Password</label>
-        <input
-          id="su-password"
-          name="password"
-          type="password"
-          autoComplete="new-password"
-          minLength={8}
-          required
-          className="input"
-          placeholder="Minimal 8 karakter"
-        />
-      </div>
-      <div>
-        <label htmlFor="su-konfirmasi" className="label">Ulangi password</label>
-        <input id="su-konfirmasi" name="konfirmasi" type="password" autoComplete="new-password" required className="input" />
-      </div>
-      <FormMessage state={state} />
-      <SubmitButton pendingText="Mendaftar…" className="w-full">Daftar</SubmitButton>
-      <p className="text-xs text-slate-500">
-        Setelah mendaftar, Anda mengisi nama lengkap dan role. Akun bisa dipakai setelah disetujui Admin atau Master.
-      </p>
     </form>
   );
 }
