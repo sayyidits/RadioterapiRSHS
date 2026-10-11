@@ -13,7 +13,7 @@ export function RoleSwitcher({ users, currentId }: { users: DemoUser[]; currentI
   const pathname = usePathname();
   const formRef = useRef<HTMLFormElement>(null);
   return (
-    <form ref={formRef} action={demoSignIn} className="flex items-center gap-2">
+    <form ref={formRef} action={demoSignIn} className="flex w-full min-w-0 items-center gap-2 md:w-auto">
       <input type="hidden" name="next" value={pathname} />
       <label htmlFor="role-switch" className="hidden text-xs font-medium text-slate-500 md:block">
         Lihat sebagai
@@ -23,7 +23,7 @@ export function RoleSwitcher({ users, currentId }: { users: DemoUser[]; currentI
         name="uid"
         defaultValue={currentId}
         onChange={() => formRef.current?.requestSubmit()}
-        className="rounded-lg border border-teal-300 bg-teal-50 py-1.5 pl-2 pr-7 text-sm font-medium text-teal-900 outline-none focus:ring-2 focus:ring-teal-600/30"
+        className="w-full min-w-0 md:w-auto rounded-lg border border-teal-300 bg-teal-50 py-1.5 pl-2 pr-7 text-base font-medium text-teal-900 sm:text-sm outline-none focus:ring-2 focus:ring-teal-600/30"
       >
         {users.map((u) => (
           <option key={u.id} value={u.id}>

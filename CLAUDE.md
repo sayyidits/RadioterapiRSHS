@@ -72,6 +72,14 @@ Roles and access are never read from `user_metadata` (users can set it themselve
 (optionally with `app_metadata.akses`), which needs the service role (`db:seed`, demo mode).
 `listDoctors()` (DPJP choices) returns active doctors only.
 
+Google sign-in sends `redirectTo = <request origin>/auth/callback` (`siteOrigin()` in
+`app/login/actions.ts`). If that URL is not in Supabase's Redirect URLs allowlist, Supabase
+silently falls back to the **Site URL**. On 2026-10-11 the Site URL was still `http://localhost:3000`,
+so Google login from a phone landed on localhost (the auth logs' `referer` shows the redirect
+Supabase actually used). The fix is in the Supabase dashboard: set Site URL to the Vercel domain and
+allow `https://<domain>/**`. As a safety net, `lib/supabase/proxy.ts` forwards any `?code=` that
+lands outside `/auth` to `/auth/callback`.
+
 `lib/auth.ts`: `getSessionProfile()` returns the logged-in account whatever its status (used by
 `/daftar` and `/menunggu`, outside the `(app)` layout). `getCurrentUser()` returns active users
 with a role kerja (`CurrentUser`: role + akses) and redirects the rest. Google and
@@ -258,7 +266,7 @@ real Supabase project, so `npm run dev` is Supabase mode and `npm run dev:demo`
 (`scripts/dev-demo.mjs`, sets `NEXT_PUBLIC_DEMO=1`) is demo mode. Never set `NEXT_PUBLIC_DEMO` on
 Vercel: it would turn the public site into the login-free demo.
 
-**Demo mode** (current default, used for the presentation):
+**Demo mode** (`npm run dev:demo`, used for presentations):
 - `lib/demo/db.ts` runs PGlite (Postgres in WASM) inside the Next.js process. On first open it creates a minimal Supabase stub (`anon`/`authenticated`/`service_role` roles, `auth.users`, `auth.uid()` reading `request.jwt.claim.sub`), runs the **same** migration files, and seeds from `lib/demo-seed.ts`.
 - Queries run through `asUser(uid, fn)`: a transaction with `set_config('request.jwt.claim.sub', uid)` + `set local role authenticated`, so RLS and the RPC role checks behave exactly as in production.
 - Data dir: `node_modules/.cache/demo-db`. Keep it out of the project root, or Turbopack watches it and reloads endlessly. On Vercel it falls back to `memory://`, which is not suitable for shared use: each instance holds its own copy and resets on cold start.
@@ -270,7 +278,7 @@ Vercel: it would turn the public site into the login-free demo.
 - `getDemoDb()` caches the open promise on `globalThis`, and a failed open clears it. If you ever see the same init error repeating, restart the dev server.
 
 **Supabase mode** (the production path, see Deployment): `@supabase/ssr` cookie sessions
-refreshed in `proxy.ts` → `lib/supabase/proxy.ts`, Google + email/password login and sign-up
+refreshed in `proxy.ts` → `lib/supabase/proxy.ts`, Google + email/password login, no sign-up
 (`app/login/actions.ts`), roles and approval status in `profiles` (see Accounts).
 
 Every data access goes through a mode-agnostic layer, so pages and actions never touch a
@@ -281,12 +289,15 @@ backend directly:
 
 ## UI rules decided with the user
 
+- **Phone layout** (the user asked for it to work well on phones, 2026-10-11). The page must never scroll sideways at 375px. Below `md`, the header shows only the logo and a ☰ button (`components/mobile-menu.tsx`, which holds the nav links, profile, role badge or demo switcher, and Keluar). Wide tables get a card/list variant on narrow screens instead of horizontal scrolling: the patient list below `lg`, the fraction schedule and the CT Sim picker (per-week, 2 columns) below `sm`, and `StageStepper` becomes "Tahap n dari 8" with a segmented bar below `md`. `.input` uses `text-base` below `sm` so iOS Safari does not zoom on focus. Grid children holding tables need `min-w-0`, or `overflow-x-auto` inside them stops working.
+
 - The **"Alur pasien" kanban board** on the dashboard (`StageBoard` in `app/(app)/page.tsx`) is **demo/presentation only**. It renders only when `IS_DEMO` and must not appear in the production website.
 - The primary action is a **"+ Pasien baru" button** (`components/add-patient-button.tsx`, top-right of the dashboard and the patient list, administrasi only) instead of relying on the header nav link, because the user found people miss the link at the top. Keep it in production. Style: the standard teal `btn btn-primary` at normal size. The user tried a larger emerald "Tambah pasien" variant and preferred this one.
 - Patient list (`components/patient-table.tsx`): the stage column is labeled **"Status"**, and so is the list filter. The **Fraksi** column only shows a value while the patient is in `PENYINARAN` (to avoid distraction) and renders `done/total` with a pastel light-blue (`bg-sky-300`) progress bar under it. Every other status shows "-".
 - Registration form fields: No. RM, nama, tanggal lahir, jenis kelamin (L/P), no HP, diagnosis rujukan, and a required **Dokter DPJP** select.
-- `/profil` (the user's name in the header, a "Profil" button on narrow screens): own profile plus "Atur password" (`supabase.auth.updateUser`), so an account that signed up with Google can also sign in with email + password (Supabase keeps it one account). Name, role, and access are changed only by Admin/Master. - `/privasi`: public privacy policy (no login, allowed in both `proxy.ts` paths), linked from the login page and used as the privacy policy URL on the Google consent screen. Its wording is a draft for the hospital to review; the contact email is the `KONTAK` constant.
-- Login page (Supabase mode): "Masuk dengan Google" button and an email + password form only. Accounts are created by Admin/Master (see Accounts). `?error=` codes from the callback are shown as Indonesian messages. Admin and Master get an "Akun" nav tab, and their usual role-kerja dashboard gets an extra "Akun menunggu persetujuan" card while sign-ups are waiting.
+- `/profil` (the user's name in the header, "Profil & password" in the ☰ menu on phones): own profile plus "Atur password" (`supabase.auth.updateUser`), so an account that signed up with Google can also sign in with email + password (Supabase keeps it one account). Name, role, and access are changed only by Admin/Master.
+- `/privasi`: public privacy policy (no login, allowed in both `proxy.ts` paths), linked from the login page and used as the privacy policy URL on the Google consent screen. Its wording is a draft for the hospital to review; the contact email is the `KONTAK` constant.
+- Login page (Supabase mode): "Masuk dengan Google" button and an email + password form only. Accounts are created by Admin/Master (see Accounts). `?error=` codes from the callback are shown as Indonesian messages. Admin and Master get an "Akun" nav tab, and their usual role-kerja dashboard gets an extra "Akun belum terdaftar" card while accounts that signed in without an invitation (`baru`, or legacy `menunggu`) are waiting.
 - Doctors get two nav tabs: **"Daftar Pasien"** (`/pasien/saya`, only their DPJP patients) and **"Daftar Pasien Penuh"** (`/pasien`, everyone). Other roles have one "Daftar Pasien" tab. Both pages render `components/patient-list.tsx`. A doctor's "Tugas saya" on the dashboard only lists their own patients.
 - `/penyinaran` lists `PENYINARAN` patients grouped by machine, with today's attendance. The nav tab is labeled "Absen Penyinaran" for administrasi and "Penyinaran Hari Ini" for RTT, and RTT can record fractions inline there for patients marked hadir.
 - **"Info Pesawat"** tab (`/pesawat`, all roles, right after the patient-list tab(s)) is **per day**. For each external machine (Synergy, Precise, Cobalt, not Brakiterapi) it shows occupancy on the selected date (`?tanggal=`, `DateNav`) against the daily quota (65 / 65 / 30). Below that is a 20-working-day bar strip (sky, amber at ≥ 90%, rose when full; click a day to select it) and that day's patients ("Fx k/n" or "Verifikasi & mulai"). The quota is a hard limit only when booking at POLI (and changing the machine at PLANNING). Delays can still push a day over, and that shows in rose. The Planning machine dropdown labels each machine "tersedia" / "penuh N hari" for this patient's remaining days.

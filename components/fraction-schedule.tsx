@@ -8,6 +8,9 @@ const STATUS = {
   absent: { text: "Tidak hadir", className: "bg-rose-50 text-rose-700 ring-rose-200" },
 } as const;
 
+/** Warna baris, sama dengan tabel desktop */
+const ROW_TONE = { done: "", today: "bg-teal-50/40", planned: "text-slate-500", absent: "bg-rose-50/40" } as const;
+
 /** Catatan & jadwal fraksi: yang sudah diberikan, hari tidak hadir, dan sisa jadwal. */
 export function FractionSchedule({ rows, mesin }: { rows: ScheduleRow[]; mesin: string | null }) {
   const planned = rows.filter((r) => r.kind === "planned");
@@ -25,7 +28,29 @@ export function FractionSchedule({ rows, mesin }: { rows: ScheduleRow[]; mesin: 
           </p>
         </div>
       )}
-      <div className="overflow-x-auto">
+      {/* HP: satu baris ringkas per hari, karena tabel 6 kolom tidak muat */}
+      <ul className="divide-y divide-slate-100 border-t border-slate-200 text-sm sm:hidden">
+        {rows.map((r) => {
+          const row = mobileRow(r, mesin);
+          return (
+            <li
+              key={row.key}
+              className={`py-2 ${ROW_TONE[row.status]}`}
+            >
+              <div className="flex items-center justify-between gap-2">
+                <p className="whitespace-nowrap">
+                  <span className="inline-block w-12 font-medium">{row.fx != null ? `Fx ${row.fx}` : "-"}</span>
+                  {formatDayDate(row.tanggal)}
+                </p>
+                <Status kind={row.status} />
+              </div>
+              {row.detail && <p className="mt-0.5 pl-12 text-xs text-slate-500">{row.detail}</p>}
+            </li>
+          );
+        })}
+      </ul>
+
+      <div className="hidden overflow-x-auto sm:block">
         <table className="w-full text-left text-sm">
           <thead className="border-b border-slate-200 text-xs uppercase text-slate-500">
             <tr>
@@ -86,6 +111,36 @@ export function FractionSchedule({ rows, mesin }: { rows: ScheduleRow[]; mesin: 
       </div>
     </div>
   );
+}
+
+/** Satu baris jadwal untuk tampilan HP: nomor fraksi, tanggal, status, dan detail dalam satu teks */
+function mobileRow(r: ScheduleRow, mesin: string | null) {
+  if (r.kind === "done") {
+    const f = r.fraction;
+    return {
+      key: `fx-${f.id}`,
+      fx: f.fraksi_ke,
+      tanggal: f.tanggal,
+      status: "done" as const,
+      detail: [f.mesin, f.rtt?.full_name, f.catatan].filter(Boolean).join(" · "),
+    };
+  }
+  if (r.kind === "absent") {
+    return {
+      key: `absent-${r.tanggal}`,
+      fx: null,
+      tanggal: r.tanggal,
+      status: "absent" as const,
+      detail: r.catatan ?? "Jadwal mundur 1 hari kerja",
+    };
+  }
+  return {
+    key: `plan-${r.fraksi_ke}`,
+    fx: r.fraksi_ke,
+    tanggal: r.tanggal,
+    status: r.today ? ("today" as const) : ("planned" as const),
+    detail: mesin ?? "",
+  };
 }
 
 function Status({ kind }: { kind: keyof typeof STATUS }) {

@@ -119,8 +119,9 @@ Skenario demo singkat:
 ### 3. Login email dan Google
 
 1. Supabase → **Authentication → URL Configuration**:
-   - **Site URL**: alamat Vercel tadi
-   - **Redirect URLs**: tambahkan `https://<alamat-vercel>/auth/callback` dan `http://localhost:3000/auth/callback`
+   - **Site URL**: alamat Vercel tadi (**jangan** `http://localhost:3000`)
+   - **Redirect URLs**: tambahkan `https://<alamat-vercel>/**` dan `http://localhost:3000/**`
+   - Kalau alamat website tidak ada di Redirect URLs, Supabase diam-diam mengarahkan login Google ke Site URL. Bila Site URL masih localhost, login dari HP/komputer lain berakhir di `localhost` dan gagal.
 2. Supabase → **Authentication → Sign In / Providers**:
    - **Allow new users to sign up**: **aktif**. Wajib, karena saat nakes yang didaftarkan masuk Google pertama kali, Supabase membuat akunnya saat itu. Penyaringan dilakukan database: hanya email yang didaftarkan Admin/Master yang mendapat akses.
    - **Email**: aktif, dengan **Confirm email** aktif. Pengiriman email bawaan Supabase sangat dibatasi; untuk pemakaian sebenarnya pasang SMTP sendiri di Authentication → Emails → SMTP Settings.

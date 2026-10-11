@@ -90,7 +90,7 @@ export default async function PatientPage({ params }: PageProps<"/pasien/[id]">)
       </section>
 
       <div className="grid gap-6 lg:grid-cols-3">
-        <div className="space-y-6 lg:col-span-2">
+        <div className="min-w-0 space-y-6 lg:col-span-2">
           {patient.current_stage !== "SELESAI" && (
             <section className="card p-5">
               <div className="mb-4 flex flex-wrap items-start justify-between gap-2">

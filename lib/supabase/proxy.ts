@@ -7,6 +7,17 @@ import { supabaseEnv } from "./env";
 const PUBLIC_PATHS = ["/login", "/auth", "/privasi"];
 
 export async function updateSession(request: NextRequest) {
+  // Bila redirectTo ditolak (tidak ada di Redirect URLs Supabase), Supabase mengembalikan pengguna
+  // ke Site URL dengan ?code=. Teruskan ke /auth/callback supaya kodenya tetap ditukar menjadi sesi.
+  const code = request.nextUrl.searchParams.get("code");
+  if (code && !request.nextUrl.pathname.startsWith("/auth")) {
+    const to = request.nextUrl.clone();
+    to.pathname = "/auth/callback";
+    to.search = "";
+    to.searchParams.set("code", code);
+    return NextResponse.redirect(to);
+  }
+
   let response = NextResponse.next({ request });
   const { url, key } = supabaseEnv();
 

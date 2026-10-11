@@ -59,7 +59,33 @@ export function CtSimPicker({
         {available === 0 && <b className="text-rose-700">Tidak ada tanggal tersedia dalam 8 minggu ke depan.</b>}
       </p>
 
-      <div className="overflow-x-auto">
+      {/* HP: per minggu, 2 kolom (kalender Sen–Jum tidak muat di layar sempit) */}
+      <div className="space-y-3 sm:hidden">
+        {weeks.map((week) => {
+          const days = week.filter((date) => byDate.has(date) || HARI_LIBUR[date]);
+          if (days.length === 0) return null;
+          return (
+            <div key={week[0]}>
+              <p className="mb-1 text-xs font-medium text-slate-500">Minggu {formatShortDate(week[0])}</p>
+              <div className="grid grid-cols-2 gap-1.5 text-xs">
+                {days.map((date) => (
+                  <DayCell
+                    key={date}
+                    date={date}
+                    mesin={mesin}
+                    option={byDate.get(date)}
+                    selected={chosen?.ct === date}
+                    onSelect={() => setSelected(date)}
+                    withDay
+                  />
+                ))}
+              </div>
+            </div>
+          );
+        })}
+      </div>
+
+      <div className="hidden overflow-x-auto sm:block">
         <table className="w-full min-w-[34rem] table-fixed border-separate border-spacing-1 text-xs">
           <thead>
             <tr className="text-slate-500">
@@ -113,18 +139,22 @@ function DayCell({
   option,
   selected,
   onSelect,
+  withDay = false,
 }: {
   date: string;
   mesin: string;
   option: CtSimOption | undefined;
   selected: boolean;
   onSelect: () => void;
+  /** Tampilkan nama hari (tampilan HP, tanpa kepala kolom Sen–Jum) */
+  withDay?: boolean;
 }) {
+  const label = withDay ? `${HARI[new Date(`${date}T00:00:00Z`).getUTCDay()]} ${formatShortDate(date)}` : formatShortDate(date);
   if (!option) {
     const libur = HARI_LIBUR[date];
     return (
       <div className="h-full rounded-md px-2 py-1.5 text-slate-300" title={libur}>
-        <p className="font-medium">{formatShortDate(date)}</p>
+        <p className="font-medium">{label}</p>
         <p className="truncate">{libur ? "Libur" : ""}</p>
       </div>
     );
@@ -142,7 +172,7 @@ function DayCell({
         title={reasons.join(". ")}
         className="w-full cursor-not-allowed rounded-md bg-slate-100 px-2 py-1.5 text-left text-slate-400"
       >
-        <p className="font-medium line-through">{formatShortDate(date)}</p>
+        <p className="font-medium line-through">{label}</p>
         <p>{ctPenuh && option.tersedia ? "CT Sim penuh" : "Penuh"}</p>
       </button>
     );
@@ -157,7 +187,7 @@ function DayCell({
         selected ? "bg-teal-700 text-white ring-teal-700" : "bg-white text-slate-700 ring-teal-200 hover:bg-teal-50"
       }`}
     >
-      <p className="font-medium">{formatShortDate(date)}</p>
+      <p className="font-medium">{label}</p>
       <p className={selected ? "text-teal-100" : "text-slate-500"}>Verif {formatShortDate(option.verifikasi)}</p>
       {option.sisaMin != null && (
         <p className={selected ? "text-teal-100" : option.sisaMin <= 5 ? "text-amber-700" : "text-slate-400"}>
@@ -170,6 +200,8 @@ function DayCell({
     </button>
   );
 }
+
+const HARI = ["Min", "Sen", "Sel", "Rab", "Kam", "Jum", "Sab"];
 
 /** Minggu Senin–Jumat yang mencakup rentang tanggal */
 function groupByWeek(first: string, last: string) {
