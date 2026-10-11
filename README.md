@@ -114,7 +114,7 @@ Skenario demo singkat:
 
 1. Push repo ini ke GitHub, lalu di https://vercel.com pilih **Add New → Project** dan import repo tersebut.
 2. Di **Environment Variables**, isi `NEXT_PUBLIC_SUPABASE_URL` dan `NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY` (atau `..._ANON_KEY`). **Jangan** pasang `SUPABASE_SERVICE_ROLE_KEY` atau `SUPABASE_DB_URL` di Vercel.
-3. Deploy, lalu catat alamatnya, mis. `https://flow-radioterapi.vercel.app`.
+3. Deploy, lalu catat alamatnya, mis. `https://radioterapi-rshs.vercel.app` (alamat yang dipakai sekarang).
 
 ### 3. Login email dan Google
 

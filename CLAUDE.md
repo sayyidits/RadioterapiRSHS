@@ -77,7 +77,7 @@ Google sign-in sends `redirectTo = <request origin>/auth/callback` (`siteOrigin(
 silently falls back to the **Site URL**. On 2026-10-11 the Site URL was still `http://localhost:3000`,
 so Google login from a phone landed on localhost (the auth logs' `referer` shows the redirect
 Supabase actually used). The fix is in the Supabase dashboard: set Site URL to the Vercel domain and
-allow `https://<domain>/**`. As a safety net, `lib/supabase/proxy.ts` forwards any `?code=` that
+allow the exact `https://<domain>/auth/callback` (narrowed from `/**` on 2026-10-11, see KEAMANAN.md #4). As a safety net, `lib/supabase/proxy.ts` forwards any `?code=` that
 lands outside `/auth` to `/auth/callback`.
 
 `lib/auth.ts`: `getSessionProfile()` returns the logged-in account whatever its status (used by
