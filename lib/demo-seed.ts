@@ -5,7 +5,8 @@
 // sebelum verifikasi, verifikasi = H+14 hari (hari kerja), fraksi 1 di hari verifikasi.
 // Selain pasien bernama, dibuat pasien pengisi supaya kuota harian Synergy, Precise,
 // dan Cobalt penuh di minggu-minggu awal (lihat FULL) sehingga dokter/perawat di Poli
-// harus mencari tanggal CT Sim yang masih kosong.
+// harus mencari tanggal CT Sim yang masih kosong. Pasien CITO (contoh bernama) memakai kuota
+// CITO sendiri dan verifikasinya di hari CT Sim, jadi tidak ikut mengisi kuota standar.
 import { tglVerifikasiDari } from "./booking";
 import { addDays, isWorkingDay, nextWorkingDay, prevWorkingDay, workingDayFrom, workingDaysFrom } from "./holidays";
 import { KUOTA_CT_SIM, KUOTA_PESAWAT, MESIN_EKSTERNAL, STAGE_KEYS, type Akses, type Role, type StageKey } from "./workflow";
@@ -46,6 +47,8 @@ type Identity = {
   teknik: string;
   mesin: string;
   dpjp: "dokter" | "dokter2";
+  /** Pasien CITO: kuota CITO, verifikasi & fraksi 1 di hari CT Sim */
+  cito?: boolean;
 };
 
 type SeedPatient = Identity & {
@@ -74,6 +77,7 @@ const PATIENTS: SeedPatient[] = [
   { no_rm: "RM-000113", nama: "Rudi Hartanto", tgl_lahir: "1955-03-02", jenis_kelamin: "L", diagnosis: "Metastasis tulang femur dekstra", area: "Femur dekstra", dosis: 30, fraksi: 10, teknik: "3DCRT", mesin: "Cobalt", dpjp: "dokter", stage: "POLI" },
   { no_rm: "RM-000114", nama: "Nurhayati", tgl_lahir: "1972-08-25", jenis_kelamin: "P", diagnosis: "Ca mammae sinistra post BCS", area: "Payudara kiri", dosis: 40, fraksi: 15, teknik: "3DCRT", mesin: "Precise", dpjp: "dokter2", stage: "POLI", poliHangus: true },
   { no_rm: "RM-000115", nama: "Suparman", tgl_lahir: "1950-12-11", jenis_kelamin: "L", diagnosis: "Metastasis tulang vertebra torakal", area: "Vertebra T8-T10", dosis: 20, fraksi: 5, teknik: "3DCRT", mesin: "Cobalt", dpjp: "dokter", stage: "POLI" },
+  { no_rm: "RM-000118", nama: "Darsono", tgl_lahir: "1956-01-23", jenis_kelamin: "L", diagnosis: "Kompresi medula spinalis ec metastasis vertebra torakal", area: "Vertebra T4-T7", dosis: 30, fraksi: 10, teknik: "3DCRT", mesin: "Cobalt", dpjp: "dokter", stage: "POLI" },
   { no_rm: "RM-000116", nama: "Lestari Wahyuni", tgl_lahir: "1977-06-19", jenis_kelamin: "P", diagnosis: "Glioma derajat tinggi post reseksi", area: "Otak", dosis: 60, fraksi: 30, teknik: "VMAT", mesin: "Synergy", dpjp: "dokter2", stage: "POLI" },
   // Sudah dijadwalkan, menunggu tahap berikutnya
   { no_rm: "RM-000103", nama: "Ratna Dewi", tgl_lahir: "1975-01-18", jenis_kelamin: "P", diagnosis: "Ca mammae dekstra post MRM", area: "Dinding dada + supraklavikula", dosis: 50, fraksi: 25, teknik: "3DCRT", mesin: "Precise", dpjp: "dokter", stage: "CT_SIM", verifIn: 12, poliByPerawat: true },
@@ -82,6 +86,9 @@ const PATIENTS: SeedPatient[] = [
   { no_rm: "RM-000105", nama: "Agus Salim", tgl_lahir: "1964-11-22", jenis_kelamin: "L", diagnosis: "Ca rekti post LAR", area: "Pelvis", dosis: 50.4, fraksi: 28, teknik: "IMRT", mesin: "Synergy", dpjp: "dokter", stage: "PLANNING", verifIn: 2, returnedFromVerifikasi: true },
   { no_rm: "RM-000106", nama: "Maria Ulfa", tgl_lahir: "1980-03-09", jenis_kelamin: "P", diagnosis: "Ca mammae sinistra post BCS", area: "Payudara kiri", dosis: 40, fraksi: 15, teknik: "3DCRT", mesin: "Precise", dpjp: "dokter", stage: "VERIFIKASI", verifIn: 0 },
   { no_rm: "RM-000107", nama: "Hendra Wijaya", tgl_lahir: "1971-07-14", jenis_kelamin: "L", diagnosis: "Glioblastoma post reseksi", area: "Otak", dosis: 60, fraksi: 30, teknik: "VMAT", mesin: "Synergy", dpjp: "dokter2", stage: "VERIFIKASI", verifIn: -1 },
+  // CITO: CT Sim hari ini, dan yang sudah penyinaran sejak CT Sim-nya (tanpa jeda 14 hari)
+  { no_rm: "RM-000119", nama: "Rohimah", tgl_lahir: "1964-05-30", jenis_kelamin: "P", diagnosis: "Perdarahan aktif Ca serviks stadium IIIB", area: "Pelvis", dosis: 20, fraksi: 5, teknik: "3DCRT", mesin: "Synergy", dpjp: "dokter", stage: "CT_SIM", verifIn: 0, cito: true },
+  { no_rm: "RM-000120", nama: "Sumarni", tgl_lahir: "1961-10-08", jenis_kelamin: "P", diagnosis: "Sindrom vena kava superior ec Ca paru", area: "Mediastinum", dosis: 30, fraksi: 10, teknik: "3DCRT", mesin: "Precise", dpjp: "dokter2", stage: "PENYINARAN", fractionsDone: 4, hadirToday: true, cito: true },
   // Penyinaran, selesai, dan replanning
   { no_rm: "RM-000108", nama: "Yuliana Putri", tgl_lahir: "1966-12-01", jenis_kelamin: "P", diagnosis: "Ca serviks stadium IIIB", area: "Pelvis + paraaorta", dosis: 50, fraksi: 25, teknik: "VMAT", mesin: "Synergy", dpjp: "dokter", stage: "PENYINARAN", fractionsDone: 12, hadirToday: true, absentAfter: 6 },
   { no_rm: "RM-000109", nama: "Slamet Riyadi", tgl_lahir: "1949-02-27", jenis_kelamin: "L", diagnosis: "Metastasis tulang vertebra lumbal", area: "Vertebra L2-L4", dosis: 20, fraksi: 5, teknik: "3DCRT", mesin: "Cobalt", dpjp: "dokter2", stage: "PENYINARAN", fractionsDone: 3 },
@@ -166,6 +173,7 @@ function payloadFor(stage: StageKey, p: Spec): Record<string, unknown> {
         total_fraksi: p.fraksi,
         mesin: p.mesin,
         tgl_ct_sim: p.ct,
+        cito: p.cito ? "CITO" : "Standar",
       };
     case "CT_SIM":
       return { tanggal_ct: p.ct, posisi: "Supine", imobilisasi: head ? "Thermoplastic mask" : "Vacloc" };
@@ -277,10 +285,15 @@ function namedSpec(p: SeedPatient, today: string): Spec {
     // Selesai 2 hari kerja lalu; penyinaran (juga yang dikembalikan hari ini untuk replanning) sampai kemarin
     const last = workday(today, p.stage === "SELESAI" ? -3 : -1);
     const { fractionDates, absentDates } = pastFractions(last, done, p.absentAfter);
-    const sched = { verif: fractionDates[0], ct: ctFor(fractionDates[0]) ?? minusWorkdays(fractionDates[0], 10) };
+    // CITO: CT Sim di hari fraksi 1
+    const ct = p.cito ? fractionDates[0] : (ctFor(fractionDates[0]) ?? minusWorkdays(fractionDates[0], 10));
+    const sched = { verif: fractionDates[0], ct };
     return { ...base, ...sched, fractionDates, absentDates, replan: !!p.replanAfter };
   }
-  if (p.verifIn !== undefined) return { ...base, ...scheduleFor(workday(today, p.verifIn)) };
+  if (p.verifIn !== undefined) {
+    const verif = workday(today, p.verifIn);
+    return { ...base, ...(p.cito ? { ct: verif, verif } : scheduleFor(verif)) };
+  }
   return base;
 }
 
@@ -325,9 +338,10 @@ function fillerSpecs(named: Spec[], today: string): Spec[] {
     absentAfter?: number;
   };
 
-  // Pasien per tanggal CT Sim (kuota CT Simulator), termasuk pasien bernama yang sudah dijadwalkan
+  // Pasien standar per tanggal CT Sim (kuota CT Simulator), termasuk pasien bernama yang sudah dijadwalkan.
+  // Pasien CITO memakai kuota CITO sendiri.
   const ctUsed = new Map<string, number>();
-  for (const s of named) if (s.ct) ctUsed.set(s.ct, (ctUsed.get(s.ct) ?? 0) + 1);
+  for (const s of named) if (s.ct && !s.cito) ctUsed.set(s.ct, (ctUsed.get(s.ct) ?? 0) + 1);
   const takeCt = (ct: string) => {
     const n = ctUsed.get(ct) ?? 0;
     if (n >= KUOTA_CT_SIM) return false;
@@ -336,7 +350,7 @@ function fillerSpecs(named: Spec[], today: string): Spec[] {
   };
 
   const occ = Object.fromEntries(MESIN_EKSTERNAL.map((m) => [m, new Array<number>(horizon).fill(0)]));
-  for (const s of named) {
+  for (const s of named.filter((s) => !s.cito)) {
     for (const d of projectedDays(s, today)) {
       const k = indexOf.get(d);
       if (k !== undefined && occ[s.mesin]) occ[s.mesin][k]++;
@@ -461,15 +475,18 @@ function toRecord(p: Spec, i: number, ids: Record<DemoKey, string>, today: strin
   const scheduled = p.ct !== null;
   // Tanggal ACC tiap tahap: Poli beberapa hari sebelum CT Sim (yang CT Sim-nya masih jauh
   // sudah di-ACC dalam 2 minggu terakhir), Delineasi H+3, Planning H+7, Verifikasi di tanggal verifikasi
-  const accDate: Partial<Record<StageKey, string>> = scheduled
-    ? {
+  // CITO: Poli sehari sebelumnya, lalu CT Sim s.d. verifikasi di hari yang sama
+  const accDate: Partial<Record<StageKey, string>> = !scheduled
+    ? {}
+    : p.cito
+    ? { POLI: notAfterToday(prevWorkingDay(p.ct!)), CT_SIM: p.ct!, DELINEASI: p.ct!, PLANNING: p.ct!, VERIFIKASI: p.verif! }
+    : {
         POLI: [minusWorkdays(p.ct!, 2 + (i % 4)), workday(today, -(i % 10))].sort()[0],
         CT_SIM: p.ct!,
         DELINEASI: plusWorkdays(p.ct!, 3),
         PLANNING: plusWorkdays(p.ct!, 7),
         VERIFIKASI: p.verif!,
-      }
-    : {};
+      };
   // Kunjungan Poli hanya berlaku hari itu: pasien yang masih di Poli didaftarkan hari ini
   const registered = scheduled ? prevWorkingDay(accDate.POLI!) : p.poliHangus ? prevWorkingDay(today) : today;
 
@@ -553,6 +570,7 @@ function toRecord(p: Spec, i: number, ids: Record<DemoKey, string>, today: strin
       dpjp_id: ids[p.dpjp],
       // Pesawat & tanggal dipilih di Poli; pasien replanning yang kembali ke Poli tetap menyimpannya
       mesin: passedPoli ? p.mesin : null,
+      cito: passedPoli && !!p.cito,
       tgl_ct_sim: passedPoli ? p.ct : null,
       tgl_verifikasi: passedPoli ? p.verif : null,
       data,

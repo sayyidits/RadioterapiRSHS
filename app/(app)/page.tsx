@@ -1,6 +1,6 @@
 import Link from "next/link";
 import { AddPatientButton } from "@/components/add-patient-button";
-import { CountPill, StageBadge } from "@/components/badges";
+import { CitoBadge, CountPill, StageBadge } from "@/components/badges";
 import { DateNav } from "@/components/date-nav";
 import { DueBadge } from "@/components/due-badge";
 import { LoadBar, loadTone } from "@/components/machine-load";
@@ -14,7 +14,9 @@ import { isWorkingDay } from "@/lib/holidays";
 import type { Akun, Patient } from "@/lib/types";
 import {
   KUOTA_CT_SIM,
+  KUOTA_CT_SIM_CITO,
   KUOTA_PESAWAT,
+  KUOTA_PESAWAT_CITO,
   MESIN_EKSTERNAL,
   ROLES,
   STAGES,
@@ -230,7 +232,10 @@ function TaskSection({
                     {i + 1}
                   </span>
                   <div>
-                    <p className="font-medium">{p.nama}</p>
+                    <p className="flex flex-wrap items-center gap-1.5 font-medium">
+                      {p.nama}
+                      {p.cito && <CitoBadge />}
+                    </p>
                     <p className="font-mono text-xs text-slate-500">RM {p.no_rm}</p>
                   </div>
                 </div>
@@ -256,13 +261,14 @@ function TaskSection({
   );
 }
 
-/** Urutan prioritas: due date terdekat (terlambat paling atas), Poli tanpa due date di akhir. */
+/** Urutan prioritas: due date terdekat (terlambat paling atas), CITO lebih dulu di due date yang sama, Poli tanpa due date di akhir. */
 function prioritize(patients: Patient[], today: string, doneToday: Record<string, number>) {
   return patients
     .map((p) => ({ patient: p, due: dueDate(p, today, (doneToday[p.id] ?? 0) > 0) }))
     .sort(
       (a, b) =>
         (a.due ?? "9999").localeCompare(b.due ?? "9999") ||
+        Number(b.patient.cito) - Number(a.patient.cito) ||
         // Di due date yang sama, tahap persiapan didahulukan dari penyinaran harian
         Number(a.patient.current_stage === "PENYINARAN") - Number(b.patient.current_stage === "PENYINARAN") ||
         a.patient.stage_entered_at.localeCompare(b.patient.stage_entered_at),
@@ -307,7 +313,10 @@ function Agenda({
         <AgendaColumn
           title="CT Simulator"
           empty="Tidak ada CT Sim."
-          kuota={KUOTA_CT_SIM}
+          counts={[
+            { n: ctSim.filter((p) => !p.cito).length, kuota: KUOTA_CT_SIM },
+            { label: "CITO", n: ctSim.filter((p) => p.cito).length, kuota: KUOTA_CT_SIM_CITO },
+          ]}
           items={ctSim.map((p) => ({
             patient: p,
             note: stageIndex(p.current_stage) > stageIndex("CT_SIM") ? "Sudah CT Sim" : undefined,
@@ -335,21 +344,29 @@ function Agenda({
         />
         <div className="bg-white px-5 py-4">
           <h3 className="text-sm font-semibold">Penyinaran per pesawat</h3>
-          <p className="mb-3 text-xs text-slate-500">Pasien dibanding kuota harian</p>
+          <p className="mb-3 text-xs text-slate-500">Pasien standar dan CITO dibanding kuota hariannya</p>
           <ul className="space-y-3">
             {MESIN_EKSTERNAL.map((m) => {
-              const n = jadwal.filter((j) => j.mesin === m).length;
+              const rows = jadwal.filter((j) => j.mesin === m);
+              const cito = rows.filter((j) => byId.get(j.patient_id)?.cito).length;
+              const n = rows.length - cito;
               const kuota = KUOTA_PESAWAT[m];
+              const kuotaCito = KUOTA_PESAWAT_CITO[m];
               return (
                 <li key={m}>
                   <Link href={`/pesawat?tanggal=${tanggal}`} className="block hover:opacity-80">
-                    <div className="mb-1 flex justify-between text-xs">
+                    <div className="mb-1 flex justify-between gap-2 text-xs">
                       <span className="font-medium text-slate-700">{m}</span>
-                      <span className={loadTone(n, kuota).text}>
-                        {n}/{kuota}
+                      <span>
+                        <span className={loadTone(n, kuota).text}>
+                          {n}/{kuota}
+                        </span>
+                        <span className={`ml-2 ${cito >= kuotaCito ? "text-rose-700" : "text-rose-600/80"}`}>
+                          CITO {cito}/{kuotaCito}
+                        </span>
                       </span>
                     </div>
-                    <LoadBar n={n} kuota={kuota} label={`${m}: ${n} dari ${kuota} pasien`} />
+                    <LoadBar n={n} kuota={kuota} label={`${m}: ${n} dari ${kuota} pasien standar, ${cito} dari ${kuotaCito} CITO`} />
                   </Link>
                 </li>
               );
@@ -365,14 +382,14 @@ function AgendaColumn({
   title,
   hint,
   empty,
-  kuota,
+  counts,
   items,
 }: {
   title: string;
   hint?: string;
   empty: string;
-  /** Kuota harian: jumlah ditampilkan "n/kuota", rose bila penuh */
-  kuota?: number;
+  /** Kuota harian per kategori: jumlah ditampilkan "n/kuota", rose bila penuh */
+  counts?: { label?: string; n: number; kuota: number }[];
   items: { patient: Patient; note?: string; warn?: boolean }[];
 }) {
   return (
@@ -382,11 +399,17 @@ function AgendaColumn({
           <h3 className="text-sm font-semibold">{title}</h3>
           {hint && <p className="text-xs text-slate-500">{hint}</p>}
         </div>
-        {kuota ? (
-          <span
-            className={`rounded-full px-2 py-0.5 text-xs font-semibold ${items.length >= kuota ? "bg-rose-50 text-rose-700" : "bg-slate-100 text-slate-700"}`}
-          >
-            {items.length}/{kuota}
+        {counts ? (
+          <span className="flex flex-wrap justify-end gap-1">
+            {counts.map((c) => (
+              <span
+                key={c.label ?? ""}
+                className={`whitespace-nowrap rounded-full px-2 py-0.5 text-xs font-semibold ${c.n >= c.kuota ? "bg-rose-50 text-rose-700" : "bg-slate-100 text-slate-700"}`}
+              >
+                {c.label && `${c.label} `}
+                {c.n}/{c.kuota}
+              </span>
+            ))}
           </span>
         ) : (
           <CountPill n={items.length} />
@@ -399,7 +422,10 @@ function AgendaColumn({
           {items.map(({ patient: p, note, warn }) => (
             <li key={p.id}>
               <Link href={`/pasien/${p.id}`} className="block rounded-md px-2 py-1 hover:bg-slate-50">
-                <p className="truncate text-sm font-medium">{p.nama}</p>
+                <p className="flex items-center gap-1.5 text-sm font-medium">
+                  <span className="truncate">{p.nama}</span>
+                  {p.cito && <CitoBadge />}
+                </p>
                 <p className="truncate text-xs text-slate-500">
                   {p.mesin ?? "-"} · {p.dpjp?.full_name ?? "-"}
                   {note && <span className={warn ? "font-medium text-rose-700" : ""}> · {note}</span>}

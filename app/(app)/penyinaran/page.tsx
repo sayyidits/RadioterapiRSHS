@@ -1,5 +1,6 @@
 import Link from "next/link";
 import { AttendanceControl } from "@/components/attendance-control";
+import { CitoBadge } from "@/components/badges";
 import { FractionForm } from "@/components/fraction-form";
 import { ProgressBar } from "@/components/progress-bar";
 import { StatCards } from "@/components/stat-cards";
@@ -119,6 +120,7 @@ function PatientRow({
         <Link href={`/pasien/${p.id}`} className="font-medium text-slate-900 hover:text-teal-700">
           {p.nama}
         </Link>
+        {p.cito && <CitoBadge className="ml-2" />}
         <p className="font-mono text-xs text-slate-500">RM {p.no_rm}</p>
         <p className="mt-1 text-xs text-slate-500">DPJP: {p.dpjp?.full_name ?? "-"}</p>
         <div className="mt-2 w-40">

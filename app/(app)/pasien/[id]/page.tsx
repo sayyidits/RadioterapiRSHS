@@ -1,7 +1,7 @@
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { AttendanceControl } from "@/components/attendance-control";
-import { StageBadge } from "@/components/badges";
+import { CitoBadge, StageBadge } from "@/components/badges";
 import { DueBadge } from "@/components/due-badge";
 import { EventTimeline } from "@/components/event-timeline";
 import { FractionForm } from "@/components/fraction-form";
@@ -11,7 +11,7 @@ import { ReturnForm } from "@/components/return-form";
 import { StageActionPanel } from "@/components/stage-action-panel";
 import { StageStepper } from "@/components/stage-stepper";
 import { getCurrentUser } from "@/lib/auth";
-import { JUMLAH_PILIHAN_CT, cekKuota, type Hunian } from "@/lib/booking";
+import { JUMLAH_PILIHAN_CT, cekKuota, type HunianKategori } from "@/lib/booking";
 import { ProgressBar } from "@/components/progress-bar";
 import { attendanceDays, attendanceToday, fractionCounts, getPatient, hunianPesawat, jumlahCtSim } from "@/lib/data";
 import { age, dateWIB, formatDate, formatDateTime, todayISO } from "@/lib/format";
@@ -27,6 +27,7 @@ import {
   actorsLabel,
   canActOn,
   dueDate,
+  kategoriOf,
   poliHangus,
   type FieldDef,
   type StageKey,
@@ -57,7 +58,7 @@ export default async function PatientPage({ params }: PageProps<"/pasien/[id]">)
     fractionCounts(ids, today),
     fractions.length > 0 ? attendanceDays(patient.id) : [],
     needsHunian ? hunianPesawat(today, addDays(today, 200), patient.id) : null,
-    booksCtSim ? jumlahCtSim(today, workingDaysFrom(today, JUMLAH_PILIHAN_CT).at(-1)!, patient.id) : {},
+    booksCtSim ? jumlahCtSim(today, workingDaysFrom(today, JUMLAH_PILIHAN_CT).at(-1)!, patient.id) : { standar: {}, cito: {} },
   ]);
   const attendanceEntries = attendance[patient.id] ?? [];
   const todayCount = countToday[patient.id] ?? 0;
@@ -180,7 +181,10 @@ function PatientHeader({ patient, fractionsDone }: { patient: Patient; fractions
       <div className="flex flex-wrap items-start justify-between gap-4">
         <div>
           <p className="font-mono text-xs text-slate-500">RM {patient.no_rm}</p>
-          <h1 className="text-xl font-semibold">{patient.nama}</h1>
+          <h1 className="flex flex-wrap items-center gap-2 text-xl font-semibold">
+            {patient.nama}
+            {patient.cito && <CitoBadge />}
+          </h1>
           <p className="mt-1 text-sm text-slate-600">
             {JENIS_KELAMIN[patient.jenis_kelamin]} · {age(patient.tgl_lahir)} tahun ({formatDate(patient.tgl_lahir)})
             {patient.no_hp && <> · {patient.no_hp}</>}
@@ -352,8 +356,9 @@ function displayValue(f: FieldDef, value: unknown) {
   return String(value);
 }
 
-/** "Precise (tersedia)" / "Cobalt (penuh 3 hari)" untuk sisa hari penyinaran pasien ini */
-function machineOptionLabels(hunian: Hunian, patient: Patient, done: number, today: string) {
+/** "Precise (tersedia)" / "Cobalt (penuh 3 hari)" untuk sisa hari penyinaran pasien ini, di kuota kategorinya */
+function machineOptionLabels(hunian: HunianKategori, patient: Patient, done: number, today: string) {
+  const kategori = kategoriOf(patient);
   const mulai = workingDayFrom(patient.tgl_verifikasi && patient.tgl_verifikasi > today ? patient.tgl_verifikasi : today);
   const hari = (patient.total_fraksi ?? 0) - done;
   const labels: Record<string, string> = {};
@@ -362,7 +367,7 @@ function machineOptionLabels(hunian: Hunian, patient: Patient, done: number, tod
       labels[m] = `${m} (rencana dari Poli)`;
       continue;
     }
-    const cek = cekKuota(hunian, m, mulai, hari);
+    const cek = cekKuota(hunian[kategori], m, mulai, hari, kategori);
     labels[m] = cek.sisaMin == null ? `${m} (tanpa kuota)` : cek.tersedia ? `${m} (tersedia)` : `${m} (penuh ${cek.hariPenuh} hari)`;
   }
   return labels;
@@ -378,5 +383,6 @@ function fieldDefaults(patient: Patient, stage: StageKey) {
   if (stage === "CT_SIM" && !defaults.tanggal_ct) defaults.tanggal_ct = patient.tgl_ct_sim ?? todayISO();
   if (stage === "VERIFIKASI" && !defaults.tanggal_verifikasi) defaults.tanggal_verifikasi = patient.tgl_verifikasi ?? todayISO();
   if (stage === "POLI" && !defaults.diagnosis_kerja) defaults.diagnosis_kerja = patient.diagnosis;
+  if (stage === "POLI" && !defaults.cito) defaults.cito = patient.cito ? "CITO" : "Standar";
   return defaults;
 }

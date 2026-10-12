@@ -4,13 +4,13 @@ import { IS_DEMO } from "./mode";
 import { demoUserId } from "./rpc";
 import { createClient } from "./supabase/server";
 import { todayISO } from "./format";
-import type { Hunian } from "./booking";
+import type { HunianKategori, JumlahCtSim } from "./booking";
 import type { AttendanceDay } from "./schedule";
 import type { Akun, AttendanceEntry, Fraction, Patient, Profile, StageEvent, Undangan } from "./types";
 import type { StageKey } from "./workflow";
 
 const BASE_COLUMNS =
-  "id, no_rm, nama, tgl_lahir, jenis_kelamin, no_hp, diagnosis, current_stage, stage_entered_at, dosis_total_gy, total_fraksi, dpjp_id, mesin, tgl_ct_sim, tgl_verifikasi, data, created_at, updated_at";
+  "id, no_rm, nama, tgl_lahir, jenis_kelamin, no_hp, diagnosis, current_stage, stage_entered_at, dosis_total_gy, total_fraksi, dpjp_id, mesin, cito, tgl_ct_sim, tgl_verifikasi, data, created_at, updated_at";
 // Nama DPJP ikut diambil (bentuk sama dengan embed PostgREST)
 const PATIENT_COLUMNS = `${BASE_COLUMNS}, dpjp:profiles!patients_dpjp_id_fkey(full_name)`;
 const DEMO_PATIENT_COLUMNS = `${BASE_COLUMNS},
@@ -292,11 +292,11 @@ export async function jadwalSinar(from: string, to: string, exclude?: string) {
 }
 
 /**
- * Jumlah pasien per pesawat per hari: { Cobalt: { "2026-10-26": 30 } }.
+ * Jumlah pasien per kategori per pesawat per hari: { standar: { Cobalt: { "2026-10-26": 30 } }, cito: {...} }.
  * Terhitung sejak ACC Poli (tanggal verifikasi) sampai fraksi terakhir.
  */
-export async function hunianPesawat(from: string, to: string, exclude?: string): Promise<Hunian> {
-  type Row = { mesin: string; tanggal: string; jumlah: number };
+export async function hunianPesawat(from: string, to: string, exclude?: string): Promise<HunianKategori> {
+  type Row = { mesin: string; tanggal: string; cito: boolean; jumlah: number };
   let rows: Row[];
   if (IS_DEMO) {
     rows = await demo((tx) =>
@@ -309,17 +309,18 @@ export async function hunianPesawat(from: string, to: string, exclude?: string):
         .rpc("hunian_pesawat", { p_from: from, p_to: to, p_exclude: exclude ?? null })
         .order("tanggal")
         .order("mesin")
+        .order("cito")
         .range(start, end),
     );
   }
-  const hunian: Hunian = {};
-  for (const r of rows) (hunian[r.mesin] ??= {})[r.tanggal] = r.jumlah;
+  const hunian: HunianKategori = { standar: {}, cito: {} };
+  for (const r of rows) (hunian[r.cito ? "cito" : "standar"][r.mesin] ??= {})[r.tanggal] = r.jumlah;
   return hunian;
 }
 
-/** Jumlah pasien yang dijadwalkan CT Sim per tanggal: { "2026-10-26": 7 }, dari jumlah_ct_sim(). */
-export async function jumlahCtSim(from: string, to: string, exclude?: string) {
-  type Row = { tanggal: string; jumlah: number };
+/** Jumlah pasien yang dijadwalkan CT Sim per kategori per tanggal: { standar: { "2026-10-26": 7 }, cito: {} }. */
+export async function jumlahCtSim(from: string, to: string, exclude?: string): Promise<JumlahCtSim> {
+  type Row = { tanggal: string; cito: boolean; jumlah: number };
   let rows: Row[];
   if (IS_DEMO) {
     rows = await demo((tx) =>
@@ -331,7 +332,9 @@ export async function jumlahCtSim(from: string, to: string, exclude?: string) {
     if (error) throw new Error(error.message);
     rows = (data ?? []) as Row[];
   }
-  return Object.fromEntries(rows.map((r) => [r.tanggal, r.jumlah])) as Record<string, number>;
+  const jumlah: JumlahCtSim = { standar: {}, cito: {} };
+  for (const r of rows) jumlah[r.cito ? "cito" : "standar"][r.tanggal] = r.jumlah;
+  return jumlah;
 }
 
 /** Status kehadiran yang berlaku per tanggal untuk satu pasien (untuk jadwal fraksi). */

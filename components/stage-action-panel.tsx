@@ -6,9 +6,9 @@ import { FormMessage } from "@/components/form-message";
 import { ReturnForm } from "@/components/return-form";
 import { StageFields } from "@/components/stage-fields";
 import { SubmitButton } from "@/components/submit-button";
-import { cekKuota, tglVerifikasiDari, type Hunian } from "@/lib/booking";
+import { cekKuota, tglVerifikasiDari, type HunianKategori, type JumlahCtSim } from "@/lib/booking";
 import { formatDayDate } from "@/lib/format";
-import { JENIS_KELAMIN, STAGE_KEYS, STAGE_MAP, type StageKey } from "@/lib/workflow";
+import { JENIS_KELAMIN, STAGE_KEYS, STAGE_MAP, type Kategori, type StageKey } from "@/lib/workflow";
 
 export function StageActionPanel({
   patientId,
@@ -22,11 +22,15 @@ export function StageActionPanel({
   defaults: Record<string, unknown>;
   optionLabels?: Record<string, Record<string, string>>;
   /** Poli: hunian pesawat & jadwal CT Sim (tanpa pasien ini) dan fraksi yang sudah diberikan (replanning) */
-  booking?: { hunian: Hunian; ctSim: Record<string, number>; today: string; fraksiDone: number };
+  booking?: { hunian: HunianKategori; ctSim: JumlahCtSim; today: string; fraksiDone: number };
 }) {
   const def = STAGE_MAP[stage];
-  // Pesawat & jumlah fraksi yang sedang diisi, untuk pemilih tanggal CT Sim
-  const [live, setLive] = useState({ mesin: String(defaults.mesin ?? ""), fraksi: Number(defaults.total_fraksi) || 0 });
+  // Kategori, pesawat & jumlah fraksi yang sedang diisi, untuk pemilih tanggal CT Sim
+  const [live, setLive] = useState({
+    kategori: (defaults.cito === "CITO" ? "cito" : "standar") as Kategori,
+    mesin: String(defaults.mesin ?? ""),
+    fraksi: Number(defaults.total_fraksi) || 0,
+  });
   const [clientError, setClientError] = useState<string>();
   const [mode, setMode] = useState<"advance" | "return">("advance");
   const [advanceState, advance] = useActionState(advanceAction.bind(null, patientId), undefined);
@@ -67,8 +71,8 @@ export function StageActionPanel({
     // Tanggal yang mengikuti dari CT Sim
     const ct = ctsim && String(fd.get(ctsim.name) ?? "");
     if (ct && booking) {
-      const verifikasi = tglVerifikasiDari(ct);
-      const { hari } = cekKuota(booking.hunian, live.mesin, verifikasi, live.fraksi - booking.fraksiDone);
+      const verifikasi = tglVerifikasiDari(ct, live.kategori);
+      const { hari } = cekKuota(booking.hunian[live.kategori], live.mesin, verifikasi, live.fraksi - booking.fraksiDone, live.kategori);
       rows.push({ label: "Verifikasi & fraksi 1", value: formatDayDate(verifikasi) });
       if (hari.length) rows.push({ label: "Perkiraan fraksi terakhir", value: formatDayDate(hari.at(-1)!) });
     }
@@ -79,6 +83,7 @@ export function StageActionPanel({
   function onFormChange(e: React.FormEvent<HTMLFormElement>) {
     if (!booking) return;
     const el = e.target as HTMLInputElement;
+    if (el.name === "cito") setLive((l) => ({ ...l, kategori: el.value === "CITO" ? "cito" : "standar" }));
     if (el.name === "mesin") setLive((l) => ({ ...l, mesin: el.value }));
     if (el.name === "total_fraksi") setLive((l) => ({ ...l, fraksi: Number(el.value) || 0 }));
   }
@@ -130,8 +135,9 @@ export function StageActionPanel({
             optionLabels={optionLabels}
             booking={
               booking && {
-                hunian: booking.hunian,
-                ctSim: booking.ctSim,
+                kategori: live.kategori,
+                hunian: booking.hunian[live.kategori],
+                ctSim: booking.ctSim[live.kategori],
                 today: booking.today,
                 mesin: live.mesin,
                 jumlahFraksi: live.fraksi - booking.fraksiDone,

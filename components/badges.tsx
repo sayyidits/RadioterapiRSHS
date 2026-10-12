@@ -22,3 +22,14 @@ export function RoleBadge({ role }: { role: Role }) {
     </span>
   );
 }
+
+/** Penanda pasien CITO (butuh penanganan segera, dipilih di Poli) */
+export function CitoBadge({ className = "" }: { className?: string }) {
+  return (
+    <span
+      className={`inline-flex items-center whitespace-nowrap rounded-full bg-rose-600 px-2 py-0.5 text-[11px] font-semibold uppercase tracking-wide text-white ${className}`}
+    >
+      CITO
+    </span>
+  );
+}

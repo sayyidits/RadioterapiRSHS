@@ -1,9 +1,9 @@
 // Pemesanan slot pesawat & CT Simulator: dipakai pemilih tanggal CT Sim di Poli dan pilihan
 // pesawat di Planning. Aturan harus sama dengan tgl_verifikasi_dari / kuota_penuh_pada di
-// 0004_jadwal_kuota.sql dan kuota CT Sim di 0006_kuota_ct_sim.sql
+// 0004_jadwal_kuota.sql, kuota CT Sim di 0006_kuota_ct_sim.sql, dan kuota CITO di 0013_pasien_cito.sql
 // (database tetap yang menegakkan; di sini hanya untuk tampilan).
 import { addDays, workingDayFrom, workingDaysFrom } from "./holidays";
-import { JEDA_CT_VERIFIKASI, KUOTA_CT_SIM, kuotaOf } from "./workflow";
+import { JEDA_CT_VERIFIKASI, kuotaCtSim, kuotaOf, type Kategori } from "./workflow";
 
 /** Jumlah kandidat tanggal CT Sim di pemilih tanggal Poli (hari kerja, ±8 minggu) */
 export const JUMLAH_PILIHAN_CT = 40;
@@ -11,9 +11,18 @@ export const JUMLAH_PILIHAN_CT = 40;
 /** Jumlah pasien per pesawat per tanggal, mis. { Cobalt: { "2026-10-26": 30 } } */
 export type Hunian = Record<string, Record<string, number>>;
 
-/** Verifikasi (= fraksi 1) dari tanggal CT Sim: +14 hari kalender, digeser ke hari kerja. */
-export function tglVerifikasiDari(ct: string) {
-  return workingDayFrom(addDays(ct, JEDA_CT_VERIFIKASI));
+/** Hunian per kategori pasien: CITO punya kuota sendiri yang tidak dipakai pasien standar */
+export type HunianKategori = Record<Kategori, Hunian>;
+
+/** Jumlah pasien yang dijadwalkan CT Sim per kategori per tanggal */
+export type JumlahCtSim = Record<Kategori, Record<string, number>>;
+
+/**
+ * Verifikasi (= fraksi 1) dari tanggal CT Sim: +14 hari kalender, digeser ke hari kerja.
+ * CITO tanpa jeda: di hari CT Sim itu juga.
+ */
+export function tglVerifikasiDari(ct: string, kategori: Kategori = "standar") {
+  return kategori === "cito" ? ct : workingDayFrom(addDays(ct, JEDA_CT_VERIFIKASI));
 }
 
 export type CekKuota = {
@@ -27,10 +36,13 @@ export type CekKuota = {
   hari: string[];
 };
 
-/** Apakah pesawat masih punya kuota di setiap hari kerja mulai `mulai`, sebanyak `jumlahHari`. */
-export function cekKuota(hunian: Hunian, mesin: string, mulai: string, jumlahHari: number): CekKuota {
+/**
+ * Apakah pesawat masih punya kuota kategori ini di setiap hari kerja mulai `mulai`, sebanyak
+ * `jumlahHari`. `hunian`: hunian kategori yang sama.
+ */
+export function cekKuota(hunian: Hunian, mesin: string, mulai: string, jumlahHari: number, kategori: Kategori = "standar"): CekKuota {
   const hari = jumlahHari > 0 ? workingDaysFrom(mulai, jumlahHari) : [];
-  const kuota = kuotaOf(mesin);
+  const kuota = kuotaOf(mesin, kategori);
   if (!kuota) return { tersedia: true, penuhPada: null, hariPenuh: 0, sisaMin: null, hari };
 
   let penuhPada: string | null = null;
@@ -51,15 +63,16 @@ export type CtSimOption = CekKuota & {
   ct: string;
   verifikasi: string;
   selesai: string;
-  /** Sisa kuota CT Simulator di tanggal ini (0 = penuh) */
+  /** Sisa kuota CT Simulator kategori ini di tanggal ini (0 = penuh) */
   ctSisa: number;
   /** Bisa dipilih: kuota CT Sim dan kuota pesawat sama-sama masih ada */
   bisa: boolean;
 };
 
 /**
- * Kandidat tanggal CT Sim (hari kerja mulai `dari`) beserta ketersediaan kuotanya.
- * `ctSim`: jumlah pasien yang sudah dijadwalkan CT Sim per tanggal (lihat jumlah_ct_sim di SQL).
+ * Kandidat tanggal CT Sim (hari kerja mulai `dari`) beserta ketersediaan kuotanya untuk satu kategori.
+ * `hunian` dan `ctSim` (pasien yang sudah dijadwalkan CT Sim per tanggal, lihat jumlah_ct_sim di SQL)
+ * sudah milik kategori itu.
  */
 export function ctSimOptions({
   hunian,
@@ -68,6 +81,7 @@ export function ctSimOptions({
   jumlahFraksi,
   dari,
   jumlah,
+  kategori,
 }: {
   hunian: Hunian;
   ctSim: Record<string, number>;
@@ -76,11 +90,12 @@ export function ctSimOptions({
   jumlahFraksi: number;
   dari: string;
   jumlah: number;
+  kategori: Kategori;
 }): CtSimOption[] {
   return workingDaysFrom(dari, jumlah).map((ct) => {
-    const verifikasi = tglVerifikasiDari(ct);
-    const cek = cekKuota(hunian, mesin, verifikasi, jumlahFraksi);
-    const ctSisa = Math.max(0, KUOTA_CT_SIM - (ctSim[ct] ?? 0));
+    const verifikasi = tglVerifikasiDari(ct, kategori);
+    const cek = cekKuota(hunian, mesin, verifikasi, jumlahFraksi, kategori);
+    const ctSisa = Math.max(0, kuotaCtSim(kategori) - (ctSim[ct] ?? 0));
     return { ct, verifikasi, selesai: cek.hari.at(-1) ?? verifikasi, ...cek, ctSisa, bisa: cek.tersedia && ctSisa > 0 };
   });
 }

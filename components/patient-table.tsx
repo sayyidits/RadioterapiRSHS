@@ -1,5 +1,5 @@
 import Link from "next/link";
-import { StageBadge } from "@/components/badges";
+import { CitoBadge, StageBadge } from "@/components/badges";
 import { ProgressBar } from "@/components/progress-bar";
 import { age, daysSince, formatDate, todayISO } from "@/lib/format";
 import type { Patient } from "@/lib/types";
@@ -34,6 +34,7 @@ export function PatientTable({
                 </div>
                 <div className="flex shrink-0 flex-col items-end gap-1">
                   <StageBadge stage={p.current_stage} />
+                  {p.cito && <CitoBadge />}
                   {poliHangus(p, today) && <span className="text-xs font-medium text-rose-700">Hangus</span>}
                 </div>
               </div>
@@ -86,7 +87,10 @@ export function PatientTable({
                   <td className="max-w-xs truncate px-3 py-3 text-slate-600">{p.diagnosis}</td>
                   {showDpjp && <td className="whitespace-nowrap px-3 py-3 text-slate-600">{p.dpjp?.full_name ?? "-"}</td>}
                   <td className="px-3 py-3">
-                    <StageBadge stage={p.current_stage} />
+                    <div className="flex flex-wrap items-center gap-1">
+                      <StageBadge stage={p.current_stage} />
+                      {p.cito && <CitoBadge />}
+                    </div>
                     {poliHangus(p, today) && <span className="mt-1 block text-xs font-medium text-rose-700">Hangus</span>}
                   </td>
                   <td className="px-3 py-3 text-slate-600">{actorsLabel(p.current_stage)}</td>

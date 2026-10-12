@@ -1,7 +1,7 @@
 // Definisi alur radioterapi. Urutan tahap, penanggung jawab, dan tujuan
 // "Kembalikan" harus sama dengan fungsi stage_owner / can_return / can_act di
 // supabase/migrations (0001_init.sql, 0002_dpjp_mesin_absensi.sql, 0003_alur_ringkas.sql,
-// 0004_jadwal_kuota.sql).
+// 0004_jadwal_kuota.sql, 0013_pasien_cito.sql).
 import { dateWIB, todayISO } from "./format";
 import { nextWorkingDay, workingDayFrom } from "./holidays";
 
@@ -72,8 +72,8 @@ export type StageKey = (typeof STAGE_KEYS)[number];
 export type FieldDef = {
   name: string;
   label: string;
-  /** "ctsim": pemilih tanggal CT Sim berdasarkan kuota pesawat (lib/booking.ts) */
-  type: "text" | "textarea" | "date" | "number" | "select" | "checkboxes" | "ctsim";
+  /** "ctsim": pemilih tanggal CT Sim berdasarkan kuota pesawat (lib/booking.ts) · "kategori": geser Standar / CITO */
+  type: "text" | "textarea" | "date" | "number" | "select" | "checkboxes" | "ctsim" | "kategori";
   required?: boolean;
   options?: string[];
   placeholder?: string;
@@ -115,11 +115,37 @@ export const KUOTA_PESAWAT: Record<string, number> = { Synergy: 65, Precise: 65,
  */
 export const KUOTA_CT_SIM = 7;
 
-export function kuotaOf(mesin: string | null | undefined): number | null {
-  return (mesin && KUOTA_PESAWAT[mesin]) || null;
+/**
+ * Pasien CITO (butuh penanganan segera) punya kuota sendiri di atas kuota standar, per pesawat
+ * per hari (sama dengan kuota_pesawat_cito() di 0013_pasien_cito.sql). Tidak saling dipinjam:
+ * CITO hanya memakai slot CITO, standar hanya slot standar.
+ */
+export const KUOTA_PESAWAT_CITO: Record<string, number> = { Synergy: 10, Precise: 10, Cobalt: 10 };
+
+/** Kuota CITO CT Simulator per hari, di atas KUOTA_CT_SIM (sama dengan kuota_ct_sim_cito()) */
+export const KUOTA_CT_SIM_CITO = 10;
+
+/** Kategori pasien yang dipilih di Poli. Kuota pesawat & CT Sim dihitung per kategori. */
+export type Kategori = "standar" | "cito";
+
+export const KATEGORI: Record<Kategori, string> = { standar: "Standar", cito: "CITO" };
+
+export function kategoriOf(patient: { cito: boolean }): Kategori {
+  return patient.cito ? "cito" : "standar";
 }
 
-/** Verifikasi = CT Sim + 14 hari kalender, digeser ke hari kerja; fraksi 1 di hari yang sama. */
+export function kuotaOf(mesin: string | null | undefined, kategori: Kategori = "standar"): number | null {
+  return (mesin && (kategori === "cito" ? KUOTA_PESAWAT_CITO : KUOTA_PESAWAT)[mesin]) || null;
+}
+
+export function kuotaCtSim(kategori: Kategori) {
+  return kategori === "cito" ? KUOTA_CT_SIM_CITO : KUOTA_CT_SIM;
+}
+
+/**
+ * Verifikasi = CT Sim + 14 hari kalender, digeser ke hari kerja; fraksi 1 di hari yang sama.
+ * Pasien CITO tanpa jeda: verifikasi direncanakan di hari CT Sim.
+ */
 export const JEDA_CT_VERIFIKASI = 14;
 
 const MESIN_FIELD: FieldDef = { name: "mesin", label: "Mesin", type: "select", required: true, options: MESIN, column: "mesin" };
@@ -154,6 +180,8 @@ export const STAGES: StageDef[] = [
       "Pemeriksaan, penetapan indikasi, preskripsi dosis, dan jadwal CT Sim sesuai kuota pesawat oleh dokter, dapat diisi bersama perawat.",
     actionLabel: "ACC, kirim ke CT Simulator",
     fields: [
+      // Nilai "Standar" / "CITO", disimpan juga di kolom patients.cito
+      { name: "cito", label: "Kategori pasien", type: "kategori", required: true, options: ["Standar", "CITO"] },
       { name: "diagnosis_kerja", label: "Diagnosis kerja", type: "textarea", required: true },
       { name: "stadium", label: "Stadium", type: "text", placeholder: "mis. T2N1M0 / IIB" },
       { name: "intent", label: "Tujuan terapi", type: "select", required: true, options: ["Kuratif", "Paliatif", "Adjuvan", "Neoadjuvan"] },

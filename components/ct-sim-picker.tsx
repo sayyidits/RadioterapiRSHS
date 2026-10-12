@@ -4,12 +4,13 @@ import { useState } from "react";
 import { JUMLAH_PILIHAN_CT, ctSimOptions, type CtSimOption, type Hunian } from "@/lib/booking";
 import { formatDayDate, formatShortDate } from "@/lib/format";
 import { HARI_LIBUR, addDays } from "@/lib/holidays";
-import { KUOTA_CT_SIM, kuotaOf } from "@/lib/workflow";
+import { KATEGORI, kuotaCtSim, kuotaOf, type Kategori } from "@/lib/workflow";
 
 /**
  * Pemilih tanggal CT Sim di Poli. Tanggal hanya bisa dipilih bila kuota CT Simulator hari itu
  * belum penuh dan setiap hari penyinaran (mulai verifikasi = CT + 14 hari) masih ada kuota di
- * pesawat yang dipilih. Database mengecek ulang saat ACC.
+ * pesawat yang dipilih. Pasien CITO memakai kuota CITO, dan verifikasinya di hari CT Sim.
+ * Database mengecek ulang saat ACC.
  */
 export function CtSimPicker({
   id,
@@ -17,15 +18,18 @@ export function CtSimPicker({
   hunian,
   ctSim,
   today,
+  kategori,
   mesin,
   jumlahFraksi,
 }: {
   id: string;
   name: string;
+  /** Hunian & jadwal CT Sim milik kategori pasien ini */
   hunian: Hunian;
   /** Pasien yang sudah dijadwalkan CT Sim per tanggal */
   ctSim: Record<string, number>;
   today: string;
+  kategori: Kategori;
   mesin: string;
   /** Sisa fraksi yang akan diberikan (total − sudah diberikan) */
   jumlahFraksi: number;
@@ -41,21 +45,30 @@ export function CtSimPicker({
     );
   }
 
-  const options = ctSimOptions({ hunian, ctSim, mesin, jumlahFraksi, dari: today, jumlah: JUMLAH_PILIHAN_CT });
+  const options = ctSimOptions({ hunian, ctSim, mesin, jumlahFraksi, dari: today, jumlah: JUMLAH_PILIHAN_CT, kategori });
   const byDate = new Map(options.map((o) => [o.ct, o]));
   // Pilihan yang menjadi penuh setelah pesawat/fraksi diganti otomatis batal
   const chosen = byDate.get(selected)?.bisa ? byDate.get(selected)! : null;
-  const kuota = kuotaOf(mesin);
+  const kuota = kuotaOf(mesin, kategori);
+  const kuotaCt = kuotaCtSim(kategori);
+  const cito = kategori === "cito";
+  const nama = KATEGORI[kategori];
   const weeks = groupByWeek(options[0].ct, options.at(-1)!.ct);
   const available = options.filter((o) => o.bisa).length;
 
   return (
     <div id={id} className="space-y-3">
       <input type="hidden" name={name} value={chosen?.ct ?? ""} />
+      {cito && (
+        <p className="rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-800 ring-1 ring-inset ring-rose-200">
+          Pasien <b>CITO</b>: memakai kuota khusus CITO, dan verifikasi & fraksi 1 direncanakan di hari CT Sim itu juga
+          (tanpa jeda 14 hari).
+        </p>
+      )}
       <p className="text-xs text-slate-500">
-        {kuota ? `Kuota ${mesin}: ${kuota} pasien/hari.` : `${mesin} tanpa kuota harian.`} Kuota CT Simulator: {KUOTA_CT_SIM}{" "}
-        pasien/hari. Tanggal dicoret berarti CT Sim hari itu sudah penuh
-        {kuota ? " atau ada hari penyinaran yang kuota pesawatnya sudah penuh" : ""}.{" "}
+        {kuota ? `Kuota ${nama} ${mesin}: ${kuota} pasien/hari.` : `${mesin} tanpa kuota harian.`} Kuota CT Simulator {nama}:{" "}
+        {kuotaCt} pasien/hari. Tanggal dicoret berarti CT Sim {nama} hari itu sudah penuh
+        {kuota ? ` atau ada hari penyinaran yang kuota ${nama} pesawatnya sudah penuh` : ""}.{" "}
         {available === 0 && <b className="text-rose-700">Tidak ada tanggal tersedia dalam 8 minggu ke depan.</b>}
       </p>
 
@@ -73,6 +86,8 @@ export function CtSimPicker({
                     key={date}
                     date={date}
                     mesin={mesin}
+                    kuotaCt={kuotaCt}
+                    cito={cito}
                     option={byDate.get(date)}
                     selected={chosen?.ct === date}
                     onSelect={() => setSelected(date)}
@@ -104,6 +119,8 @@ export function CtSimPicker({
                     <DayCell
                       date={date}
                       mesin={mesin}
+                      kuotaCt={kuotaCt}
+                      cito={cito}
                       option={byDate.get(date)}
                       selected={chosen?.ct === date}
                       onSelect={() => setSelected(date)}
@@ -136,6 +153,8 @@ export function CtSimPicker({
 function DayCell({
   date,
   mesin,
+  kuotaCt,
+  cito,
   option,
   selected,
   onSelect,
@@ -143,6 +162,9 @@ function DayCell({
 }: {
   date: string;
   mesin: string;
+  /** Kuota CT Simulator kategori pasien ini */
+  kuotaCt: number;
+  cito: boolean;
   option: CtSimOption | undefined;
   selected: boolean;
   onSelect: () => void;
@@ -162,7 +184,7 @@ function DayCell({
   if (!option.bisa) {
     const ctPenuh = option.ctSisa === 0;
     const reasons = [
-      ctPenuh && `CT Simulator sudah ${KUOTA_CT_SIM} pasien`,
+      ctPenuh && `CT Simulator ${cito ? "CITO " : ""}sudah ${kuotaCt} pasien`,
       !option.tersedia && `Pesawat penuh pada ${formatDayDate(option.penuhPada!)} (${option.hariPenuh} hari penuh)`,
     ].filter(Boolean);
     return (
@@ -188,7 +210,9 @@ function DayCell({
       }`}
     >
       <p className="font-medium">{label}</p>
-      <p className={selected ? "text-teal-100" : "text-slate-500"}>Verif {formatShortDate(option.verifikasi)}</p>
+      <p className={selected ? "text-teal-100" : "text-slate-500"}>
+        {option.verifikasi === option.ct ? "Verif hari itu" : `Verif ${formatShortDate(option.verifikasi)}`}
+      </p>
       {option.sisaMin != null && (
         <p className={selected ? "text-teal-100" : option.sisaMin <= 5 ? "text-amber-700" : "text-slate-400"}>
           {mesin} sisa {option.sisaMin}

@@ -1,9 +1,11 @@
 import { CtSimPicker } from "@/components/ct-sim-picker";
 import type { Hunian } from "@/lib/booking";
-import { JENIS_KELAMIN, type FieldDef } from "@/lib/workflow";
+import { JENIS_KELAMIN, type FieldDef, type Kategori } from "@/lib/workflow";
 
 /** Data untuk field "ctsim": hunian pesawat dan isian form yang sedang diketik */
 export type BookingInput = {
+  /** Kategori pasien yang sedang dipilih (Standar / CITO); hunian & ctSim milik kategori ini */
+  kategori: Kategori;
   hunian: Hunian;
   /** Pasien yang sudah dijadwalkan CT Sim per tanggal */
   ctSim: Record<string, number>;
@@ -31,10 +33,17 @@ export function StageFields({
       {fields.map((f) => {
         const id = `f_${f.name}`;
         const def = defaults[f.name];
-        const wide = f.type === "textarea" || f.type === "checkboxes" || f.type === "ctsim";
+        const wide = f.type === "textarea" || f.type === "checkboxes" || f.type === "ctsim" || f.type === "kategori";
         return (
           <div key={f.name} className={wide ? "sm:col-span-2" : ""}>
-            {f.type === "checkboxes" ? (
+            {f.type === "kategori" ? (
+              <KategoriSwitch
+                name={f.name}
+                label={f.label}
+                options={f.options ?? []}
+                defaultValue={def == null ? undefined : String(def)}
+              />
+            ) : f.type === "checkboxes" ? (
               <fieldset>
                 <legend className="label">
                   {f.label}
@@ -72,6 +81,7 @@ export function StageFields({
                       hunian={booking.hunian}
                       ctSim={booking.ctSim}
                       today={booking.today}
+                      kategori={booking.kategori}
                       mesin={booking.mesin}
                       jumlahFraksi={booking.jumlahFraksi}
                     />
@@ -122,5 +132,44 @@ export function StageFields({
         );
       })}
     </div>
+  );
+}
+
+/**
+ * Geser dua pilihan (Standar / CITO). Radio biasa supaya ikut terkirim di form dan perubahannya
+ * terbaca lewat onChange form (pemilih tanggal CT Sim memakai kuota kategori yang dipilih).
+ */
+function KategoriSwitch({
+  name,
+  label,
+  options,
+  defaultValue,
+}: {
+  name: string;
+  label: string;
+  options: string[];
+  defaultValue?: string;
+}) {
+  const initial = defaultValue && options.includes(defaultValue) ? defaultValue : options[0];
+  return (
+    <fieldset>
+      <legend className="label">{label}</legend>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="inline-grid grid-cols-2 rounded-full bg-slate-100 p-1 text-sm ring-1 ring-inset ring-slate-200">
+          {options.map((opt) => (
+            <label
+              key={opt}
+              className={`cursor-pointer rounded-full px-5 py-1.5 text-center font-medium text-slate-600 transition has-[:checked]:shadow-sm has-[:focus-visible]:ring-2 has-[:focus-visible]:ring-teal-500 ${
+                opt === "CITO" ? "has-[:checked]:bg-rose-600 has-[:checked]:text-white" : "has-[:checked]:bg-white has-[:checked]:text-teal-800"
+              }`}
+            >
+              <input type="radio" name={name} value={opt} defaultChecked={opt === initial} className="sr-only" />
+              {opt}
+            </label>
+          ))}
+        </div>
+        <p className="text-xs text-slate-500">CITO: butuh penanganan segera, memakai kuota CITO dan tanpa jeda CT Sim ke verifikasi.</p>
+      </div>
+    </fieldset>
   );
 }

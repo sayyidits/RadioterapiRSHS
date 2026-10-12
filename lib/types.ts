@@ -54,9 +54,11 @@ export type Patient = {
   dpjp_id: string | null;
   dpjp: { full_name: string } | null;
   mesin: string | null;
+  /** Pasien CITO (dipilih di Poli): kuota pesawat & CT Sim sendiri, verifikasi di hari CT Sim */
+  cito: boolean;
   /** Rencana CT Sim (dipilih di Poli) */
   tgl_ct_sim: string | null;
-  /** Rencana verifikasi = fraksi 1 (CT Sim + 14 hari, digeser ke hari kerja) */
+  /** Rencana verifikasi = fraksi 1 (CT Sim + 14 hari, digeser ke hari kerja; CITO di hari CT Sim) */
   tgl_verifikasi: string | null;
   data: Partial<Record<StageKey, Record<string, unknown>>>;
   created_at: string;
