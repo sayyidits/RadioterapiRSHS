@@ -1,6 +1,6 @@
 "use client";
 
-import Link from "next/link";
+import Link, { useLinkStatus } from "next/link";
 import { usePathname } from "next/navigation";
 
 export function NavLinks({ links }: { links: { href: string; label: string }[] }) {
@@ -13,14 +13,26 @@ export function NavLinks({ links }: { links: { href: string; label: string }[] }
           <Link
             key={l.href}
             href={l.href}
-            className={`whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition ${
+            className={`relative whitespace-nowrap rounded-lg px-3 py-1.5 text-sm font-medium transition ${
               active ? "bg-teal-50 text-teal-800" : "text-slate-600 hover:bg-slate-100 hover:text-slate-900"
             }`}
           >
-            {l.label}
+            <PendingHint />
+            <span className="relative">{l.label}</span>
           </Link>
         );
       })}
     </nav>
+  );
+}
+
+/** Tab yang diklik berdenyut sampai halaman tujuan mulai tampil (tanpa menggeser tata letak). */
+function PendingHint() {
+  const { pending } = useLinkStatus();
+  return (
+    <span
+      aria-hidden
+      className={`absolute inset-0 rounded-lg bg-teal-100 transition-opacity ${pending ? "animate-pulse opacity-100" : "opacity-0"}`}
+    />
   );
 }
