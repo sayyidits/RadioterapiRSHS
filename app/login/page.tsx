@@ -7,9 +7,9 @@ import { AKSES, ROLES, STAGES, actorsLabel, stagesOwnedBy, STAGE_MAP } from "@/l
 import { demoSignIn } from "./actions";
 import { LoginForm } from "./login-form";
 
-/** Pesan dari ?error= (callback Google/email, profil) dan ?sesi=habis (mode demo) */
+/** Pesan dari ?error= (callback Google, profil) dan ?sesi=habis (mode demo) */
 const PESAN: Record<string, string> = {
-  masuk: "Gagal masuk. Login dibatalkan atau tautan sudah kedaluwarsa, silakan coba lagi.",
+  masuk: "Gagal masuk. Login Google dibatalkan atau kedaluwarsa, silakan coba lagi.",
   google: "Tidak dapat terhubung ke Google. Silakan coba lagi.",
   profil: "Akun ini belum memiliki profil. Silakan keluar lalu masuk lagi, atau hubungi Admin.",
   habis: "Sesi berakhir, silakan pilih akun lagi.",
@@ -59,7 +59,7 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
               {pesan}
             </p>
           )}
-          {IS_DEMO ? <DemoRolePicker /> : <PasswordLogin />}
+          {IS_DEMO ? <DemoRolePicker /> : <GoogleLogin />}
           <p className="mt-8 text-center text-xs text-slate-500">
             <Link href="/privasi" className="hover:text-teal-700 hover:underline">
               Kebijakan Privasi
@@ -71,12 +71,12 @@ export default async function LoginPage({ searchParams }: PageProps<"/login">) {
   );
 }
 
-function PasswordLogin() {
+function GoogleLogin() {
   return (
     <>
       <h1 className="text-2xl font-semibold">Selamat datang</h1>
       <p className="mb-6 mt-1 text-sm text-slate-500">
-        Masuk dengan akun Google atau email yang sudah didaftarkan oleh Admin atau Master.
+        Masuk dengan akun Google yang sudah didaftarkan oleh Admin atau Master.
       </p>
       <LoginForm />
     </>

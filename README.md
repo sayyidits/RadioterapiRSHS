@@ -83,14 +83,13 @@ Skenario demo singkat:
 
 - **Akun hanya dibuat oleh Admin atau Master.** Di menu **Akun → Daftarkan akun**, isi email Google nakes beserta nama lengkap + gelar dan role kerja, satu per satu atau tempel banyak baris dari Excel (kolom: email, nama, role, lalu hak akses bila perlu).
 - Saat nakes itu klik **Masuk dengan Google** untuk pertama kali, akunnya langsung aktif dengan nama dan role tadi.
-- Halaman login hanya berisi **Masuk dengan Google** dan **email + password**. Tidak ada pendaftaran mandiri.
+- Halaman login hanya berisi **Masuk dengan Google**. Tidak ada login email + password dan tidak ada pendaftaran mandiri.
 - Orang yang masuk dengan Google tanpa didaftarkan hanya melihat pesan "Akun belum terdaftar" dan tidak bisa melihat data apa pun. Admin/Master bisa langsung mendaftarkannya dari kelompok **Belum terdaftar** di halaman Akun.
 - Setiap akun punya **role kerja** (Dokter, Perawat, RTT, Fismed, Administrasi), yang menentukan tahap yang bisa di-ACC, dan **hak akses** dengan urutan **Master → Admin → Nakes**:
   - **Nakes**: tidak mengelola akun.
   - **Admin**: menyetujui/menolak pendaftar, mengubah role kerja, dan menonaktifkan akun Nakes di menu **Akun**. Tidak bisa mengubah akun Admin/Master atau memberi hak Admin/Master.
   - **Master**: mengelola semua akun, termasuk mengangkat Admin atau Master lain.
   - Status dan hak akses akun sendiri tidak bisa diubah sendiri.
-- Akun yang mendaftar dengan Google bisa juga masuk dengan **email + password**: klik nama Anda di kanan atas (menu **Profil**), lalu atur password. Halaman yang sama dipakai untuk mengganti password.
 - Aturan ini ditegakkan di database (RLS dan fungsi Postgres), bukan hanya di tampilan.
 
 ## Setup Supabase + Vercel (untuk pemakaian sebenarnya)
@@ -120,11 +119,11 @@ Skenario demo singkat:
 
 1. Supabase → **Authentication → URL Configuration**:
    - **Site URL**: alamat Vercel tadi (**jangan** `http://localhost:3000`)
-   - **Redirect URLs**: tambahkan `https://<alamat-vercel>/**` dan `http://localhost:3000/**`
+   - **Redirect URLs**: tambahkan alamat persis `https://<alamat-vercel>/auth/callback` dan `http://localhost:3000/auth/callback`
    - Kalau alamat website tidak ada di Redirect URLs, Supabase diam-diam mengarahkan login Google ke Site URL. Bila Site URL masih localhost, login dari HP/komputer lain berakhir di `localhost` dan gagal.
 2. Supabase → **Authentication → Sign In / Providers**:
    - **Allow new users to sign up**: **aktif**. Wajib, karena saat nakes yang didaftarkan masuk Google pertama kali, Supabase membuat akunnya saat itu. Penyaringan dilakukan database: hanya email yang didaftarkan Admin/Master yang mendapat akses.
-   - **Email**: aktif, dengan **Confirm email** aktif. Pengiriman email bawaan Supabase sangat dibatasi; untuk pemakaian sebenarnya pasang SMTP sendiri di Authentication → Emails → SMTP Settings.
+   - **Email**: **nonaktif**. Semua staf masuk lewat Google, jadi login dan pendaftaran email + password ditutup juga di API Supabase. (`npm run db:seed` untuk project uji butuh Email aktif, karena akun demonya memakai password.)
 3. **Google Cloud Console** (https://console.cloud.google.com):
    1. Buat project, lalu **APIs & Services → OAuth consent screen**: isi nama aplikasi dan email kontak, tipe *External*.
    2. **Credentials → Create credentials → OAuth client ID**, tipe *Web application*.

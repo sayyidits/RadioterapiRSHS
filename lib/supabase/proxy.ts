@@ -2,7 +2,7 @@ import { createServerClient } from "@supabase/ssr";
 import { NextResponse, type NextRequest } from "next/server";
 import { supabaseEnv } from "./env";
 
-// /auth/callback: kembali dari Google & tautan konfirmasi email, sesi belum ada.
+// /auth/callback: kembali dari Google, sesi belum ada.
 // /privasi: kebijakan privasi, diperiksa Google tanpa login.
 const PUBLIC_PATHS = ["/login", "/auth", "/privasi"];
 

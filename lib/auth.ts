@@ -34,6 +34,14 @@ export const getSessionProfile = cache(async (): Promise<Akun> => {
 
   const { data: profile } = await supabase.from("profiles").select(PROFILE_COLUMNS).eq("id", uid).maybeSingle();
   if (!profile) redirect("/login?error=profil");
+  // Biasanya undangan sudah diterapkan trigger saat Google mengonfirmasi email; ini jaring pengamannya
+  if (profile.status === "baru") {
+    const { data: diklaim } = await supabase.rpc("klaim_undangan");
+    if (diklaim) {
+      const { data: aktif } = await supabase.from("profiles").select(PROFILE_COLUMNS).eq("id", uid).maybeSingle();
+      if (aktif) return aktif as Akun;
+    }
+  }
   return profile as Akun;
 });
 

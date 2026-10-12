@@ -35,6 +35,8 @@ export type Akun = {
   status: StatusAkun;
   created_at: string;
   diproses_at: string | null;
+  /** Hanya akun belum pernah aktif (baru, menunggu, ditolak): akun Google dengan email terverifikasi */
+  terverifikasi?: boolean;
 };
 
 export type Patient = {

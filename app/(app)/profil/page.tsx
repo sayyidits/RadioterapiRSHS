@@ -1,9 +1,7 @@
 import { getCurrentUser } from "@/lib/auth";
-import { IS_DEMO } from "@/lib/mode";
 import { AKSES, ROLES } from "@/lib/workflow";
-import { PasswordForm } from "./password-form";
 
-/** Profil akun sendiri dan pengaturan password (agar akun Google juga bisa masuk dengan email + password). */
+/** Profil akun sendiri. Tidak ada pengaturan password: semua akun masuk lewat Google (audit A5). */
 export default async function ProfilPage() {
   const user = await getCurrentUser();
 
@@ -33,22 +31,6 @@ export default async function ProfilPage() {
             <dd className="font-medium">{AKSES[user.akses]}</dd>
           </div>
         </dl>
-      </section>
-
-      <section className="card p-5">
-        <h2 className="font-semibold">Password</h2>
-        <p className="mb-4 mt-1 text-sm text-slate-500">
-          Akun yang mendaftar dengan Google belum punya password. Atur password di sini supaya Anda juga bisa masuk dengan
-          mengetik email <b>{user.email || "Anda"}</b> dan password, selain tombol Google. Bisa juga dipakai untuk mengganti
-          password.
-        </p>
-        {IS_DEMO ? (
-          <p className="rounded-lg bg-slate-50 px-4 py-3 text-sm text-slate-600 ring-1 ring-inset ring-slate-200">
-            Mode demo tidak memakai login, jadi password tidak dapat diatur.
-          </p>
-        ) : (
-          <PasswordForm />
-        )}
       </section>
     </div>
   );

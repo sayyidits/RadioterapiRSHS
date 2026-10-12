@@ -209,15 +209,31 @@ export async function listUndangan() {
 }
 
 /** Semua akun untuk halaman Akun (Admin/Master), terbaru lebih dulu. */
+/** Semua akun, dengan tanda `terverifikasi` (akun Google) pada akun yang belum pernah aktif (khusus Admin/Master). */
 export async function listAccounts() {
   const columns = "id, full_name, email, role, akses, status, created_at, diproses_at";
+  type Verifikasi = { id: string; terverifikasi: boolean };
+  let accounts: Akun[];
+  let verifikasi: Verifikasi[];
   if (IS_DEMO) {
-    return demo((tx) => selectJson<Akun>(tx, `select ${columns} from public.profiles order by created_at desc, id`));
+    [accounts, verifikasi] = await demo(async (tx) => [
+      await selectJson<Akun>(tx, `select ${columns} from public.profiles order by created_at desc, id`),
+      await selectJson<Verifikasi>(tx, "select id, terverifikasi from public.verifikasi_pendaftar()"),
+    ]);
+  } else {
+    const supabase = await createClient();
+    const [rows, cek] = await Promise.all([
+      fetchAll<Akun>((from, to) =>
+        supabase.from("profiles").select(columns).order("created_at", { ascending: false }).order("id").range(from, to),
+      ),
+      supabase.rpc("verifikasi_pendaftar"),
+    ]);
+    if (cek.error) throw new Error(cek.error.message);
+    accounts = rows;
+    verifikasi = (cek.data ?? []) as Verifikasi[];
   }
-  const supabase = await createClient();
-  return fetchAll<Akun>((from, to) =>
-    supabase.from("profiles").select(columns).order("created_at", { ascending: false }).order("id").range(from, to),
-  );
+  const byId = new Map(verifikasi.map((v) => [v.id, v.terverifikasi]));
+  return accounts.map((a) => (byId.has(a.id) ? { ...a, terverifikasi: byId.get(a.id) } : a));
 }
 
 /** Pencatatan kehadiran hari ini per pasien, urut dari yang paling awal (terakhir = status berlaku). */

@@ -45,7 +45,9 @@ export function AccountRow({ akun, saya }: { akun: Akun; saya: { id: string; aks
   const [state, action] = useActionState(aturAkunAction.bind(null, akun.id), undefined);
   const hak = hakAtas(saya, akun);
   // Akun sendiri: hanya role kerja yang bisa diganti
-  const aksi = !hak.kelola ? [] : hak.sendiri ? [["aktif", "Simpan role", "btn-secondary"] as [string, string, string]] : AKSI[akun.status];
+  const semuaAksi = !hak.kelola ? [] : hak.sendiri ? [["aktif", "Simpan role", "btn-secondary"] as [string, string, string]] : AKSI[akun.status];
+  // Akun yang bukan akun Google terverifikasi tidak bisa didaftarkan (ditolak juga oleh atur_akun di database)
+  const aksi = akun.terverifikasi === false ? semuaAksi.filter(([status]) => status !== "aktif") : semuaAksi;
 
   return (
     <li className="px-5 py-4">
@@ -55,6 +57,14 @@ export function AccountRow({ akun, saya }: { akun: Akun; saya: { id: string; aks
             {akun.full_name}
             <AksesBadge akses={akun.akses} />
             {hak.sendiri && <span className="text-xs font-normal text-slate-500">(Anda)</span>}
+            {akun.terverifikasi === false && (
+              <span
+                className="inline-flex rounded-full bg-rose-50 px-2 py-0.5 text-xs font-medium text-rose-700 ring-1 ring-inset ring-rose-200"
+                title="Akun ini tidak dibuat lewat Google dengan email terverifikasi, jadi emailnya belum terbukti milik orang ini. Tolak akun ini, lalu daftarkan email nakes lewat Daftarkan akun."
+              >
+                Bukan akun Google terverifikasi
+              </span>
+            )}
           </p>
           <p className="truncate text-xs text-slate-500">
             {akun.email ?? "-"} · daftar {formatDateTime(akun.created_at)}

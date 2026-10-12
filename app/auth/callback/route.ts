@@ -2,7 +2,7 @@ import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/lib/supabase/server";
 
 /**
- * Tujuan kembali dari Google dan dari tautan konfirmasi email: tukar `code` menjadi sesi
+ * Tujuan kembali dari Google: tukar `code` menjadi sesi
  * (cookie), lalu ke dashboard. Akun baru diarahkan getCurrentUser ke /daftar.
  */
 export async function GET(request: NextRequest) {

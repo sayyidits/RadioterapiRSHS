@@ -57,14 +57,14 @@ export default async function AppLayout({ children }: LayoutProps<"/">) {
             <NavLinks links={links} />
           </div>
           <div className="ml-auto hidden items-center gap-3 md:flex">
-            <Link href="/profil" className="text-right hover:opacity-80" title="Profil & password">
+            <Link href="/profil" className="text-right hover:opacity-80" title="Profil">
               <p className="text-sm font-medium leading-tight">{user.full_name}</p>
               <p className="text-xs text-slate-500">{subtitle}</p>
             </Link>
             {roleControl}
             {logout}
           </div>
-          <MobileMenu links={[...links, { href: "/profil", label: "Profil & password" }]}>
+          <MobileMenu links={[...links, { href: "/profil", label: "Profil" }]}>
             <p className="font-medium leading-tight">{user.full_name}</p>
             <p className="break-all text-xs text-slate-500">{subtitle}</p>
             <div className="mt-3 flex flex-wrap items-center justify-between gap-3">

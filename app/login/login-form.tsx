@@ -1,46 +1,20 @@
 "use client";
 
-import { useActionState } from "react";
-import { FormMessage } from "@/components/form-message";
 import { SubmitButton } from "@/components/submit-button";
-import { signIn, signInWithGoogle } from "./actions";
+import { signInWithGoogle } from "./actions";
 
-/** Login Supabase: Google, atau email + password. Akun dibuat oleh Admin/Master, tidak ada pendaftaran mandiri. */
+/**
+ * Login Supabase: hanya Google. Login email + password dihapus (audit keamanan A5, 2026-10-12):
+ * semua staf masuk lewat Google, jadi tidak ada password yang bisa ditebak. Akun dibuat oleh
+ * Admin/Master, tidak ada pendaftaran mandiri.
+ */
 export function LoginForm() {
   return (
-    <div className="space-y-5">
-      <form action={signInWithGoogle}>
-        <SubmitButton variant="secondary" pendingText="Mengalihkan ke Google…" className="w-full py-2.5">
-          <GoogleIcon />
-          Masuk dengan Google
-        </SubmitButton>
-      </form>
-
-      <div className="flex items-center gap-3 text-xs text-slate-400">
-        <span className="h-px flex-1 bg-slate-200" />
-        atau dengan email
-        <span className="h-px flex-1 bg-slate-200" />
-      </div>
-
-      <SignInForm />
-    </div>
-  );
-}
-
-function SignInForm() {
-  const [state, action] = useActionState(signIn, undefined);
-  return (
-    <form action={action} className="space-y-4">
-      <div>
-        <label htmlFor="email" className="label">Email</label>
-        <input id="email" name="email" type="email" autoComplete="username" required className="input" />
-      </div>
-      <div>
-        <label htmlFor="password" className="label">Password</label>
-        <input id="password" name="password" type="password" autoComplete="current-password" required className="input" />
-      </div>
-      <FormMessage state={state} />
-      <SubmitButton pendingText="Masuk…" className="w-full">Masuk</SubmitButton>
+    <form action={signInWithGoogle}>
+      <SubmitButton variant="secondary" pendingText="Mengalihkan ke Google…" className="w-full py-2.5">
+        <GoogleIcon />
+        Masuk dengan Google
+      </SubmitButton>
     </form>
   );
 }

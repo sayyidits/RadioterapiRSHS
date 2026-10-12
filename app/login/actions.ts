@@ -7,7 +7,6 @@ import { DEMO_USERS } from "@/lib/demo-seed";
 import { resetDemoDb } from "@/lib/demo/db";
 import { DEMO_COOKIE, IS_DEMO } from "@/lib/mode";
 import { createClient } from "@/lib/supabase/server";
-import type { ActionState } from "@/lib/types";
 
 /** Alamat website ini (localhost saat development, domain Vercel saat produksi) untuk redirect dari Supabase */
 async function siteOrigin() {
@@ -17,32 +16,10 @@ async function siteOrigin() {
   return `${h.get("x-forwarded-proto") ?? "https"}://${h.get("x-forwarded-host") ?? h.get("host")}`;
 }
 
-/** Pesan error Supabase Auth (bahasa Inggris) dalam bahasa Indonesia */
-function authMessage(message: string) {
-  if (/invalid login credentials/i.test(message))
-    return "Email atau password salah. Kalau Anda mendaftar dengan Google, masuk dengan tombol Google lalu atur password di menu Profil.";
-  if (/email not confirmed/i.test(message)) return "Email belum dikonfirmasi. Buka tautan konfirmasi di email Anda.";
-  if (/rate limit/i.test(message)) return "Terlalu banyak percobaan. Coba lagi beberapa menit lagi.";
-  return message;
-}
-
-function readCredentials(formData: FormData) {
-  return { email: String(formData.get("email") ?? "").trim(), password: String(formData.get("password") ?? "") };
-}
-
-export async function signIn(_prev: ActionState, formData: FormData): Promise<ActionState> {
-  const { email, password } = readCredentials(formData);
-  if (!email || !password) return { error: "Email dan password wajib diisi" };
-
-  const supabase = await createClient();
-  const { error } = await supabase.auth.signInWithPassword({ email, password });
-  if (error) return { error: authMessage(error.message) };
-
-  // Akun yang belum lengkap / belum disetujui diarahkan oleh getCurrentUser
-  redirect("/");
-}
-
-/** Masuk dengan Google. Supabase mengembalikan pengguna ke /auth/callback. */
+/**
+ * Masuk dengan Google, satu-satunya cara masuk (login email + password dihapus, audit A5).
+ * Supabase mengembalikan pengguna ke /auth/callback.
+ */
 export async function signInWithGoogle() {
   const supabase = await createClient();
   const { data, error } = await supabase.auth.signInWithOAuth({
