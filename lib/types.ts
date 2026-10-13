@@ -9,7 +9,10 @@ export type Profile = {
 /** baru: belum melengkapi profil · menunggu: menunggu persetujuan Admin/Master */
 export type StatusAkun = "baru" | "menunggu" | "aktif" | "ditolak" | "nonaktif";
 
-/** Pra-daftar oleh Admin/Master: akun langsung aktif saat pemilik email ini masuk pertama kali */
+/**
+ * Pra-daftar oleh Admin/Master: akun langsung aktif saat pemilik email ini masuk pertama kali,
+ * atau (pakai_kode) setelah memasukkan kode 6 angka yang berlaku sampai kode_berlaku_sampai.
+ */
 export type Undangan = {
   email: string;
   full_name: string;
@@ -17,10 +20,17 @@ export type Undangan = {
   akses: Akses;
   dibuat_at: string;
   dibuat_oleh_nama: string | null;
+  pakai_kode: boolean;
+  kode_berlaku_sampai: string | null;
+  /** Sisa waktu kode menurut jam server saat halaman dibuat (lib/data.ts), 0 bila habis */
+  kode_sisa_detik: number;
 };
 
-/** Hasil per baris dari undang_akun */
-export type HasilUndangan = { email: string; ok: boolean; hasil: string };
+/** Kode undangan yang baru dibuat. Hanya terlihat sekali; database menyimpan hash-nya. */
+export type KodeUndangan = { kode: string; berlaku_sampai: string; berlaku_detik: number };
+
+/** Hasil per baris dari undang_akun (dengan kode bila mendaftarkan satu akun) */
+export type HasilUndangan = { email: string; ok: boolean; hasil: string } & Partial<KodeUndangan>;
 
 /** User aktif yang sedang login: role kerja + hak akses pengelolaan akun */
 export type CurrentUser = Profile & { email: string; akses: Akses };

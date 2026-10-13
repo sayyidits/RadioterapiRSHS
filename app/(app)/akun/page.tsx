@@ -2,6 +2,7 @@ import { redirect } from "next/navigation";
 import { CountPill } from "@/components/badges";
 import { getCurrentUser } from "@/lib/auth";
 import { listAccounts, listUndangan } from "@/lib/data";
+import { IS_DEMO } from "@/lib/mode";
 import type { Akun } from "@/lib/types";
 import { kelolaAkun } from "@/lib/workflow";
 import { AccountRow } from "./account-row";
@@ -41,13 +42,25 @@ export default async function AkunPage() {
       <section className="card">
         <div className="border-b border-slate-100 px-5 py-4">
           <h2 className="font-semibold">Daftarkan akun</h2>
-          <p className="text-xs text-slate-500">
-            Masukkan email Google nakes. Saat pemilik email masuk dengan Google pertama kali, akunnya langsung aktif dengan
-            nama dan role ini, tanpa perlu persetujuan lagi.
-          </p>
+          {IS_DEMO ? (
+            <p className="text-xs text-slate-500">
+              Masukkan email Google nakes. Saat pemilik email masuk dengan Google pertama kali, akunnya langsung aktif dengan
+              nama dan role ini, tanpa perlu persetujuan lagi.
+            </p>
+          ) : (
+            <p className="text-xs text-slate-500">
+              <b>Satu akun:</b> daftarkan saat yang bersangkutan ada di sebelah Anda. Setelah klik Daftarkan, muncul kode 6
+              angka yang berlaku 5 menit. Ia masuk dengan Google memakai email itu, lalu mengetik kodenya, dan akun aktif
+              dengan nama dan role ini. <b>Tempel dari Excel</b> (pendaftaran awal sekaligus) tidak memakai kode: akun aktif
+              saat pemilik email masuk dengan Google pertama kali.
+            </p>
+          )}
         </div>
         <div className="px-5 py-4">
-          <UndangForm akses={user.akses} />
+          <UndangForm
+            akses={user.akses}
+            kodeBerlaku={Object.fromEntries(undangan.map((u) => [u.email, u.kode_berlaku_sampai]))}
+          />
         </div>
       </section>
 
@@ -58,11 +71,15 @@ export default async function AkunPage() {
               Terdaftar, belum pernah masuk
               <CountPill n={undangan.length} className="ml-2" />
             </h2>
-            <p className="text-xs text-slate-500">Akun aktif otomatis saat pemilik email masuk pertama kali.</p>
+            <p className="text-xs text-slate-500">
+              {undangan.some((u) => u.pakai_kode)
+                ? "Undangan berkode aktif setelah kodenya dimasukkan; yang lain aktif otomatis saat pemilik email masuk pertama kali."
+                : "Akun aktif otomatis saat pemilik email masuk pertama kali."}
+            </p>
           </div>
           <ul className="divide-y divide-slate-100">
             {undangan.map((u) => (
-              <UndanganRow key={u.email} undangan={u} bisaHapus={user.akses === "master" || u.akses === "nakes"} />
+              <UndanganRow key={u.email} undangan={u} bisaKelola={user.akses === "master" || u.akses === "nakes"} />
             ))}
           </ul>
         </section>

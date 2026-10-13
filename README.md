@@ -83,7 +83,8 @@ Skenario demo singkat:
 ## Akun dan login (mode Supabase)
 
 - **Akun hanya dibuat oleh Admin atau Master.** Di menu **Akun → Daftarkan akun**, isi email Google nakes beserta nama lengkap + gelar dan role kerja, satu per satu atau tempel banyak baris dari Excel (kolom: email, nama, role, lalu hak akses bila perlu).
-- Saat nakes itu klik **Masuk dengan Google** untuk pertama kali, akunnya langsung aktif dengan nama dan role tadi.
+- **Daftar satu akun** dilakukan saat nakes yang bersangkutan ada di sebelah Admin: setelah klik **Daftarkan**, muncul kode 6 angka yang berlaku 5 menit. Nakes itu klik **Masuk dengan Google** memakai email tadi, lalu mengetik kodenya, dan akunnya aktif dengan nama dan role tadi. Kode yang kedaluwarsa diganti lewat **Buat kode baru**. Kode ini mencegah salah ketik email: orang lain yang kebetulan memiliki email yang salah ketik tidak punya kodenya.
+- **Tempel dari Excel** (untuk pendaftaran awal sekaligus) tidak memakai kode: akun langsung aktif saat pemiliknya klik **Masuk dengan Google** pertama kali.
 - Halaman login hanya berisi **Masuk dengan Google**. Tidak ada login email + password dan tidak ada pendaftaran mandiri.
 - Orang yang masuk dengan Google tanpa didaftarkan hanya melihat pesan "Akun belum terdaftar" dan tidak bisa melihat data apa pun. Admin/Master bisa langsung mendaftarkannya dari kelompok **Belum terdaftar** di halaman Akun.
 - Setiap akun punya **role kerja** (Dokter, Perawat, RTT, Fismed, Administrasi), yang menentukan tahap yang bisa di-ACC, dan **hak akses** dengan urutan **Master → Admin → Nakes**:
@@ -107,7 +108,7 @@ Skenario demo singkat:
    npm install
    npm run db:setup
    ```
-   Alternatif tanpa `SUPABASE_DB_URL`: buka Supabase → SQL Editor, lalu tempel dan jalankan **semua** file di `supabase/migrations/` satu per satu secara berurutan (0001 sampai 0010).
+   Alternatif tanpa `SUPABASE_DB_URL`: buka Supabase → SQL Editor, lalu tempel dan jalankan **semua** file di `supabase/migrations/` satu per satu secara berurutan (dari 0001 sampai nomor terakhir). Setiap kali ada file migration baru, jalankan `npm run db:setup` lagi; file yang sudah pernah dijalankan dilewati.
 4. `npm run db:seed` (opsional) membuat 6 akun demo (dokter@flowrt.test sebagai Master, admin@flowrt.test sebagai Admin) dan ±350 pasien dummy. **Jangan dijalankan** di database yang akan dipakai sungguhan, atau nonaktifkan akun demo setelahnya.
 
 ### 2. Deploy ke Vercel

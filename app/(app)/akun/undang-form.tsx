@@ -7,13 +7,25 @@ import { formatDateTime } from "@/lib/format";
 import type { Undangan } from "@/lib/types";
 import { AKSES, ROLES, ROLE_LIST, type Akses } from "@/lib/workflow";
 import { AksesBadge } from "./account-row";
-import { hapusUndanganAction, undangAkunAction } from "./actions";
+import { buatKodeAction, hapusUndanganAction, undangAkunAction } from "./actions";
+import { KodeUndanganTampil, SisaKode } from "./kode-undangan";
+
+/**
+ * Kode yang tampil masih kode terbaru undangan itu: belum diganti "Buat kode baru", belum
+ * dipakai, dan undangannya belum dihapus (`kodeBerlaku` dari daftar undangan yang ikut diperbarui).
+ */
+function kodeMasihTerbaru(email: string, berlakuSampai: string | undefined, kodeBerlaku: Record<string, string | null>) {
+  const terbaru = kodeBerlaku[email];
+  return !!berlakuSampai && !!terbaru && Date.parse(terbaru) === Date.parse(berlakuSampai);
+}
 
 /** Daftarkan akun lewat undangan: satu per satu, atau tempel banyak baris dari Excel. */
-export function UndangForm({ akses }: { akses: Akses }) {
+export function UndangForm({ akses, kodeBerlaku }: { akses: Akses; kodeBerlaku: Record<string, string | null> }) {
   const [mode, setMode] = useState<"satu" | "banyak">("satu");
   const [state, action] = useActionState(undangAkunAction, undefined);
   const berhasil = state?.hasil?.filter((h) => h.ok).length ?? 0;
+  // Daftarkan satu akun (mode Supabase): kode 6 angka yang berlaku 5 menit
+  const kodeBaru = state?.hasil?.length === 1 && state.hasil[0].kode ? state.hasil[0] : undefined;
 
   return (
     <div className="space-y-4">
@@ -100,7 +112,11 @@ export function UndangForm({ akses }: { akses: Akses }) {
         </div>
       </form>
 
-      {state?.hasil && state.hasil.length > 0 && (
+      {kodeBaru?.kode ? (
+        kodeMasihTerbaru(kodeBaru.email, kodeBaru.berlaku_sampai, kodeBerlaku) && (
+          <KodeUndanganTampil key={kodeBaru.kode} kode={kodeBaru.kode} detik={kodeBaru.berlaku_detik ?? 0} email={kodeBaru.email} />
+        )
+      ) : state?.hasil && state.hasil.length > 0 && (
         <div className="rounded-lg ring-1 ring-inset ring-slate-200">
           <p className="border-b border-slate-100 px-4 py-2 text-sm">
             <b>{berhasil}</b> dari {state.hasil.length} berhasil didaftarkan.
@@ -119,9 +135,14 @@ export function UndangForm({ akses }: { akses: Akses }) {
   );
 }
 
-/** Satu undangan yang belum dipakai, dengan tombol hapus bila diizinkan */
-export function UndanganRow({ undangan: u, bisaHapus }: { undangan: Undangan; bisaHapus: boolean }) {
+/**
+ * Satu undangan yang belum dipakai, dengan tombol hapus bila diizinkan. Undangan berkode
+ * menampilkan sisa waktu kodenya dan tombol Buat kode baru.
+ */
+export function UndanganRow({ undangan: u, bisaKelola }: { undangan: Undangan; bisaKelola: boolean }) {
   const [state, action] = useActionState(hapusUndanganAction.bind(null, u.email), undefined);
+  const [kodeState, kodeAction] = useActionState(buatKodeAction.bind(null, u.email), undefined);
+  const kodeBaru = kodeState?.kode && Date.parse(kodeState.kode.berlaku_sampai) === Date.parse(u.kode_berlaku_sampai ?? "") ? kodeState.kode : null;
   return (
     <li className="px-5 py-3">
       <div className="flex flex-wrap items-center justify-between gap-3">
@@ -134,17 +155,37 @@ export function UndanganRow({ undangan: u, bisaHapus }: { undangan: Undangan; bi
             {u.email} · {ROLES[u.role]} · didaftarkan {formatDateTime(u.dibuat_at)}
             {u.dibuat_oleh_nama && ` oleh ${u.dibuat_oleh_nama}`}
           </p>
+          {u.pakai_kode && !kodeBaru && (
+            <p className="text-xs">
+              <SisaKode key={u.kode_berlaku_sampai} detik={u.kode_sisa_detik} />
+            </p>
+          )}
         </div>
-        {bisaHapus && (
-          <form action={action}>
-            <SubmitButton variant="secondary" pendingText="Menghapus…" className="px-3 py-1.5">
-              Hapus
-            </SubmitButton>
-          </form>
+        {bisaKelola && (
+          <div className="flex flex-wrap gap-2">
+            {u.pakai_kode && (
+              <form action={kodeAction}>
+                <SubmitButton variant="secondary" pendingText="Membuat…" className="px-3 py-1.5">
+                  Buat kode baru
+                </SubmitButton>
+              </form>
+            )}
+            <form action={action}>
+              <SubmitButton variant="secondary" pendingText="Menghapus…" className="px-3 py-1.5">
+                Hapus
+              </SubmitButton>
+            </form>
+          </div>
         )}
       </div>
+      {kodeBaru && (
+        <div className="mt-3">
+          <KodeUndanganTampil key={kodeBaru.kode} kode={kodeBaru.kode} detik={kodeBaru.berlaku_detik} email={u.email} />
+        </div>
+      )}
       <div className="mt-2 empty:hidden">
         <FormMessage state={state} />
+        <FormMessage state={kodeState?.error ? { error: kodeState.error } : undefined} />
       </div>
     </li>
   );

@@ -4,6 +4,7 @@ import { AuthShell } from "@/components/auth-shell";
 import { getSessionProfile } from "@/lib/auth";
 import { formatDateTime } from "@/lib/format";
 import { ROLES } from "@/lib/workflow";
+import { KodeForm } from "../daftar/kode-form";
 
 /** Akun yang menunggu persetujuan Admin/Master, atau ditolak / dinonaktifkan. Belum bisa melihat data pasien. */
 export default async function MenungguPage() {
@@ -38,6 +39,12 @@ export default async function MenungguPage() {
           </div>
         )}
       </dl>
+      {!menunggu && (
+        <div className="mt-5 space-y-3">
+          <p className="text-sm text-slate-700">Didaftarkan ulang oleh Admin? Ketik kode 6 angka yang ditunjukkan Admin.</p>
+          <KodeForm />
+        </div>
+      )}
       {menunggu && (
         <div className="mt-5 flex flex-wrap gap-2">
           {/* Dashboard mengarahkan kembali ke sini selama belum disetujui */}

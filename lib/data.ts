@@ -183,29 +183,45 @@ export async function listDoctors() {
   return (data ?? []) as Profile[];
 }
 
+/** Sisa detik kode undangan menurut jam server (0 bila tanpa kode atau sudah kedaluwarsa) */
+function denganSisaKode(rows: Omit<Undangan, "kode_sisa_detik">[]): Undangan[] {
+  const sekarang = Date.now();
+  return rows.map((u) => ({
+    ...u,
+    kode_sisa_detik: u.kode_berlaku_sampai
+      ? Math.max(0, Math.floor((Date.parse(u.kode_berlaku_sampai) - sekarang) / 1000))
+      : 0,
+  }));
+}
+
 /** Undangan yang belum dipakai (pemiliknya belum pernah masuk), terbaru lebih dulu. Hanya terbaca Admin/Master. */
 export async function listUndangan() {
   if (IS_DEMO) {
-    return demo((tx) =>
-      selectJson<Undangan>(
+    const rows = await demo((tx) =>
+      selectJson<Omit<Undangan, "kode_sisa_detik">>(
         tx,
-        `select u.email, u.full_name, u.role, u.akses, u.dibuat_at, p.full_name as dibuat_oleh_nama
+        `select u.email, u.full_name, u.role, u.akses, u.dibuat_at, u.pakai_kode, u.kode_berlaku_sampai, p.full_name as dibuat_oleh_nama
          from public.undangan_akun u left join public.profiles p on p.id = u.dibuat_oleh
          where u.dipakai_at is null order by u.dibuat_at desc, u.email`,
       ),
     );
+    return denganSisaKode(rows);
   }
   const supabase = await createClient();
-  const rows = await fetchAll<Omit<Undangan, "dibuat_oleh_nama"> & { pembuat: { full_name: string } | null }>((from, to) =>
+  const rows = await fetchAll<
+    Omit<Undangan, "dibuat_oleh_nama" | "kode_sisa_detik"> & { pembuat: { full_name: string } | null }
+  >((from, to) =>
     supabase
       .from("undangan_akun")
-      .select("email, full_name, role, akses, dibuat_at, pembuat:profiles!undangan_akun_dibuat_oleh_fkey(full_name)")
+      .select(
+        "email, full_name, role, akses, dibuat_at, pakai_kode, kode_berlaku_sampai, pembuat:profiles!undangan_akun_dibuat_oleh_fkey(full_name)",
+      )
       .is("dipakai_at", null)
       .order("dibuat_at", { ascending: false })
       .order("email")
       .range(from, to),
   );
-  return rows.map(({ pembuat, ...u }) => ({ ...u, dibuat_oleh_nama: pembuat?.full_name ?? null }));
+  return denganSisaKode(rows.map(({ pembuat, ...u }) => ({ ...u, dibuat_oleh_nama: pembuat?.full_name ?? null })));
 }
 
 /** Semua akun untuk halaman Akun (Admin/Master), terbaru lebih dulu. */

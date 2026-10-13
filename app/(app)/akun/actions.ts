@@ -1,8 +1,9 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { IS_DEMO } from "@/lib/mode";
 import { rpc } from "@/lib/rpc";
-import type { ActionState, HasilUndangan } from "@/lib/types";
+import type { ActionState, HasilUndangan, KodeUndangan } from "@/lib/types";
 import { AKSES, ROLES, type Akses, type Role } from "@/lib/workflow";
 
 const PESAN = { aktif: "Tersimpan.", ditolak: "Akun ditolak.", nonaktif: "Akun dinonaktifkan." } as const;
@@ -70,11 +71,23 @@ export async function undangAkunAction(_prev: UndangState, formData: FormData): 
   if (items.length === 0 || !items[0].email) return { error: "Isi email yang akan didaftarkan" };
   if (items.length > 200) return { error: "Maksimal 200 baris sekali tempel" };
 
-  const { data, error } = await rpc<HasilUndangan[]>("undang_akun", { p_items: items });
+  // Satu akun: kode 6 angka berlaku 5 menit (0014). Tempel banyak baris dan mode demo (tanpa login Google): tanpa kode.
+  const pakaiKode = !daftar && !IS_DEMO;
+  const { data, error } = await rpc<HasilUndangan[]>("undang_akun", { p_items: items, p_kode: pakaiKode });
   if (error) return { error: error.message };
 
   revalidatePath("/", "layout");
   return { hasil: data ?? [] };
+}
+
+export type KodeState = { error?: string; kode?: KodeUndangan } | undefined;
+
+/** Kode baru (5 menit) untuk undangan yang belum dipakai, mis. kode lama sudah kedaluwarsa */
+export async function buatKodeAction(email: string): Promise<KodeState> {
+  const { data, error } = await rpc<KodeUndangan>("buat_kode_undangan", { p_email: email });
+  if (error || !data) return { error: error?.message ?? "Kode gagal dibuat" };
+  revalidatePath("/akun");
+  return { kode: data };
 }
 
 /** Hapus undangan yang belum dipakai */

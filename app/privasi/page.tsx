@@ -170,7 +170,11 @@ export default function PrivasiPage() {
         <Bagian id="keamanan">
           <ul>
             <li>Semua koneksi memakai HTTPS, dan basis data dienkripsi saat disimpan oleh penyedia layanan.</li>
-            <li>Masuk hanya dengan akun Google yang telah didaftarkan Admin/Master. Tidak ada login dengan password.</li>
+            <li>
+              Masuk hanya dengan akun Google yang telah didaftarkan Admin/Master. Akun yang didaftarkan satu per satu baru aktif
+              setelah pemiliknya memasukkan kode 6 angka dari Admin/Master, yang berlaku 5 menit. Tidak ada login dengan
+              password.
+            </li>
             <li>Hak akses ditegakkan di tingkat basis data per akun dan per role, bukan hanya di tampilan.</li>
             <li>Setiap perubahan data pasien tercatat sebagai jejak audit.</li>
             <li>Semua pihak yang terlibat dalam pelayanan wajib menjaga kerahasiaan data pasien, termasuk setelah pasien meninggal (Permenkes Nomor 24 Tahun 2022 Pasal 32).</li>
