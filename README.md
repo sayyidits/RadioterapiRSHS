@@ -92,6 +92,7 @@ Skenario demo singkat:
   - **Admin**: menyetujui/menolak pendaftar, mengubah role kerja, dan menonaktifkan akun Nakes di menu **Akun**. Tidak bisa mengubah akun Admin/Master atau memberi hak Admin/Master.
   - **Master**: mengelola semua akun, termasuk mengangkat Admin atau Master lain.
   - Status dan hak akses akun sendiri tidak bisa diubah sendiri.
+  - **Nama lengkap** bisa diubah sendiri oleh akun aktif di halaman **Profil** (mis. menambah gelar). Nama tidak boleh sama dengan akun lain, paling banyak 5 kali per 24 jam, dan setiap perubahan tercatat.
 - Aturan ini ditegakkan di database (RLS dan fungsi Postgres), bukan hanya di tampilan.
 
 ## Setup Supabase + Vercel (untuk pemakaian sebenarnya)
